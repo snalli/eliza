@@ -1,0 +1,10 @@
+*.db
+*.gz
+*.txt
+*vmlinux*
+gz/
+db/
+txt/
+.*.swp
+*.cfg
+*.pyc

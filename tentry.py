@@ -8,6 +8,7 @@ class tentry:
 	commit_ops  = set(['PM_C'])
 	fence_ops   = set(['PM_N', 'PM_B'])
 	tx_delims   = set(['PM_XS', 'PM_XE'])
+	
 	te_types    = set().union(
 						c_write_ops,
 						c_read_ops, 
@@ -16,7 +17,7 @@ class tentry:
 					    commit_ops, 
 					    fence_ops, 
 					    tx_delims)
-					    
+	
 	delims      = set().union(
 						commit_ops,
 						fence_ops, 
@@ -26,8 +27,10 @@ class tentry:
 		self.tid = 0
 		self.time = 0.0
 		self.te_type = 'INV'
-		self.addr = '0x0'
+		self.addr = '0'
 		self.size = 0
+		self.caller = 'null'
+		self.callee = 'null'
 		return None
 
 	def get_types(self):
@@ -39,8 +42,26 @@ class tentry:
 		else:
 			return False
 	
+	def get_tid(self):
+		return self.tid
+
+	def get_time(self):
+		return self.time
+		
 	def get_type(self):
 		return self.te_type
+			
+	def get_addr(self):
+		return self.addr
+	
+	def get_size(self):
+		return self.size
+		
+	def get_callee(self):
+		return self.callee
+		
+	def get_caller(self):
+		return self.caller
 		
 	def set_type(self,te_type):
 		self.te_type = te_type
@@ -57,6 +78,12 @@ class tentry:
 	def set_size(self, size):
 		self.size = size
 		
+	def set_callee(self, fun):
+		self.callee = fun
+	
+	def set_caller(self, fun):
+		self.caller = fun
+		
 	def te_list(self):
 		l = []
 		l.append(str(self.tid))
@@ -64,11 +91,26 @@ class tentry:
 		l.append(self.te_type)
 		l.append(str(self.addr))
 		l.append(str(self.size))
+		l.append(self.callee)
+		l.append(self.caller)
 	
 		return l
 		
 	def need_arg(self):
 		if self.te_type not in self.delims:
+			return True
+		else:
+			return False
+	
+	def is_fence(self):
+		if self.te_type in self.fence_ops:
+			return True
+		else:
+			return False
+	
+	def is_write(self):
+		if (self.te_type in self.c_write_ops) or \
+				(self.te_type in self.n_write_ops):
 			return True
 		else:
 			return False

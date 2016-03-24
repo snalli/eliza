@@ -1,79 +1,187 @@
 from cacheline import cacheline
+from tentry import tentry
 class epoch:
 
 	"""A structure per-SMT context"""
-	epoch_types = set(['rd-only','true'])
-
-	def __init__(self, start_time, tid):
+	epoch_types = set(['null', 'rd-only','true'])
+	CMASK = 0x3f
+	CSIZE = 64
+	
+	def __init__(self, tid, time):
 		self.rd_set = {}
-		self.wrt_set = {}
+		self.cwrt_set = {}
+		self.nwrt_set = {}
 		self.tid = tid
-		self.start_time = start_time
+		self.start_time = time
 		self.end_time   = 0.0
 		self.etype = 'null'
+		self.size = 0
+		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.cwrite, 
+				'PM_I' : self.nwrite, 'PM_L' : self.clflush,
+				'PM_XS' : self.do_nothing, 'PM_XE' : self.do_nothing,
+				'PM_C' : self.do_nothing}
+				
+		self.end_ops = ['PM_N','PM_B']
+
 		assert tid > 0
 		assert self.start_time > 0.0
-		assert self.etype in epoch_types
+		assert self.etype in self.epoch_types
 
+	def get_ep_ops(self):
+		return self.ep_ops
+		
+	def get_n_cl(self, s_addr, size):
+		e_addr = s_addr + size - 1
+		s_cl = s_addr & ~(self.CMASK)
+		e_cl = e_addr & ~(self.CMASK)
+		return 1 + ((e_cl - s_cl)/self.CSIZE)
+		
+	def ecl(self, s_addr, size):
+		e_addr = s_addr + size - 1
+		s_cl = s_addr & ~(self.CMASK)
+		e_cl = e_addr & ~(self.CMASK)
+		return e_cl
+
+	def read(self, te):
+		addr = te.get_addr()
+		size = te.get_size()
+		s_addr = int(addr, 16)
+		assert size > 0
+		assert s_addr > 0
+		
+		n_cl = self.get_n_cl(s_addr, size)
+		s_cl = s_addr & ~(self.CMASK)
+		for i in range(0, n_cl):
+			cl = cacheline(s_cl + i*self.CSIZE)
+			self.read_cacheline(cl)
+			
+		return s_cl + i*self.CSIZE
+	
+	def cwrite(self, te):
+		addr = te.get_addr()
+		size = te.get_size()
+
+		s_addr = int(addr, 16)
+		assert size > 0
+		assert s_addr > 0
+		
+		n_cl = self.get_n_cl(s_addr, size)
+		s_cl = s_addr & ~(self.CMASK)
+		for i in range(0, n_cl):
+			cl = cacheline(s_cl + i*self.CSIZE)
+			self.cwrite_cacheline(cl)
+
+		return s_cl + i*self.CSIZE
+		
+	def clflush(self, te):
+		addr = te.get_addr()
+		size = te.get_size()
+
+		s_addr = int(addr, 16)
+		assert size > 0
+		assert s_addr > 0
+		return self.ecl(s_addr, size)
+		
+	def nwrite(self, te):
+		addr = te.get_addr()
+		size = te.get_size()
+
+		s_addr = int(addr, 16)
+		assert size > 0
+		assert s_addr > 0
+		n_cl = self.get_n_cl(s_addr, size)
+		s_cl = s_addr & ~(self.CMASK)
+		for i in range(0, n_cl):
+			cl = cacheline(s_cl + i*self.CSIZE)
+			self.nwrite_cacheline(cl)
+
+		return s_cl + i*self.CSIZE
+
+		
+	def do_nothing(self, te):
+		return 0
+		
 	def read_cacheline(self, cl):
-		assert self.etype in epoch_types
-
-		rd_set = self.rd_set
-		wrt_set = self.wrt_set
-		etype = self.etype
+		assert self.etype in self.epoch_types
 
 		__addr = cl.get_addr()
 
-		if __addr not in wrt_set:
-			if __addr not in rd_set:
-				rd_set[__addr] = cl
+		# Refer to state diagram
+		if __addr not in self.cwrt_set:
+			
+			if __addr in self.nwrt_set:
+				self.nwrt_set.pop(__addr)
+				
+			assert (__addr not in self.nwrt_set)
+				
+			if __addr not in self.rd_set and __addr not in self.nwrt_set:
+					self.rd_set[__addr] = cl
 		
-		if etype == 'null':
-			etype = 'rd-only'
+		if self.etype == 'null':
+			self.etype = 'rd-only'
 
-		assert (__addr in rd_set) or (__addr in wrt_set)
-		assert (etype in epoch_types) and (etype != 'null')
+		assert (__addr in self.rd_set) or (__addr in self.cwrt_set) or (__addr in self.nwrt_set)
+		assert (self.etype in self.epoch_types) and (self.etype != 'null')
 
-	def write_cacheline(self, cl):
-		assert self.etype in epoch_types
-
-		rd_set = self.rd_set
-		wrt_set = self.wrt_set
-		etype = self.etype
+	def cwrite_cacheline(self, cl):
+		assert self.etype in self.epoch_types
 
 		__addr = cl.get_addr()
 
-		if __addr in rd_set:
-			rd_set.pop(__addr)
-			assert (__addr not in rd_set)
-
-		if __addr not in wrt_set:
-			wrt_set[__addr] = cl
+		if __addr in self.rd_set:
+			self.rd_set.pop(__addr)
+			assert (__addr not in self.rd_set)
 		
-		if (etype == 'null') or (etype == 'rd-only'):
-			etype = 'true'
+		if __addr in self.nwrt_set:
+			self.nwrt_set.pop(__addr)
+			assert (__addr not in self.nwrt_set)
 
-		assert (__addr in wrt_set)
-		assert (etype in epoch_types) and (etype == 'true')
+		if __addr not in self.cwrt_set:
+			self.cwrt_set[__addr] = cl
+		
+		if (self.etype == 'null') or (self.etype == 'rd-only'):
+			self.etype = 'true'
 
-	def end_epoch(self, end_time):
-		assert self.etype in epoch_types
+		assert (__addr in self.cwrt_set)
+		assert (self.etype in self.epoch_types) and (self.etype == 'true')
+
+	def nwrite_cacheline(self, cl):
+		assert self.etype in self.epoch_types
+
+		__addr = cl.get_addr()
+
+		if __addr in self.rd_set:
+			self.rd_set.pop(__addr)
+			assert (__addr not in self.rd_set)
+		
+		if __addr in self.cwrt_set:
+			self.cwrt_set.pop(__addr)
+			assert (__addr not in self.cwrt_set)
+
+		if __addr not in self.nwrt_set:
+			self.nwrt_set[__addr] = cl
+		
+		if (self.etype == 'null') or (self.etype == 'rd-only'):
+			self.etype = 'true'
+
+		assert (__addr in self.nwrt_set)
+		assert (self.etype in self.epoch_types) and (self.etype == 'true')
+		
+	def end_epoch(self, te):
+		assert self.etype in self.epoch_types
+		end_time = te.get_time()
 		assert end_time >= self.start_time
 
 		self.end_time = end_time
-		rd_set = self.rd_set
-		wrt_set = self.wrt_set
+		self.size = self.get_size()
+		cwrt_set = self.cwrt_set
+		nwrt_set = self.nwrt_set
 		etype = self.etype
 		
-		if etype != 'null':
-			rw_set = self.merge_sets(rd_set, wrt_set)
-			assert len(rw_set) == self.get_size()
-			# The read and write sets must be mutually exclusive			
-			return rw_set
-		else:
-			return None
+		return self.merge_sets(nwrt_set, cwrt_set) 
+		# Nobody cares about this return value
 			
-	def merge_sets(a,b):
+	def merge_sets(self,a,b):
 		assert a is not None
 		assert b is not None
 
@@ -83,7 +191,8 @@ class epoch:
 		return c
 
 	def get_cachelines(self):
-		rw_set = self.merge_sets(self.rd_set, self.wrt_set)
+		# Only cache rd and wrt
+		rw_set = self.merge_sets(self.rd_set, self.cwrt_set)
 		assert len(rw_set) == self.get_size()
 		return rw_set
 
@@ -112,14 +221,32 @@ class epoch:
 	def get_rd_set(self):
 		return self.rd_set
 	
-	def get_wrt_set(self):
-		return self.wrt_set
+	def get_cwrt_set(self):
+		return self.cwrt_set
+
+	def get_nwrt_set(self):
+		return self.nwrt_set
 
 	def get_rd_set_sz(self):
 		return len(self.rd_set)
 
-	def get_wrt_set_sz(self):
-		return len(self.wrt_set)
+	def get_cwrt_set_sz(self):
+		return len(self.cwrt_set)
 	
+	def get_nwrt_set_sz(self):
+		return len(self.nwrt_set)
+
 	def get_size(self):
-		return len(self.wrt_set) + len(self.rd_set)
+		return len(self.cwrt_set) + len(self.rd_set) + len(self.nwrt_set)
+	
+	def is_true(self):
+		if self.etype == 'true':
+			return True
+		else:
+			return False
+			
+	def is_rd_only(self):
+		if self.etype == 'rd-only':
+			return True
+		else:
+			return False
