@@ -39,6 +39,9 @@ class epoch:
 		return 1 + ((e_cl - s_cl)/self.CSIZE)
 		
 	def get_n_bi(self, s_addr, size):
+		if size == 0:
+			return 0
+
 		# s_addr is 8-byte aligned
 		# size is a mutiple of 8
 		e_addr = s_addr + size - 1
@@ -80,6 +83,7 @@ class epoch:
 		s_cl = s_addr & ~(self.CMASK)
 		for i in range(0, n_cl):
 			cl = cacheline(s_cl + i*self.CSIZE)
+			print hex(s_cl)
 			self.cwrite_cacheline(cl)
 
 		return s_cl + i*self.CSIZE
@@ -157,16 +161,10 @@ class epoch:
 			e_addr = s_addr + size - 1
 			if((e_addr + 1) & self.BMASK != 0):
 				e_cbytes = e_addr - (e_addr & ~self.BMASK) + 1
-				cl = cacheline(e_addr & ~self.CMASK)
-				print "4.1)", e_cbytes, "b sa=", hex(e_addr & ~self.CMASK)		
-				self.cwrite_cacheline(cl)
 				size = size - e_cbytes
 				
 			print "4.2)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)		
-			if size == 0:
-				return e_addr & ~self.CMASK
-			
-			assert size > 0
+		
 			assert (size % 8 == 0) # size is multiple of 8
 			assert s_addr > 0 
 			assert (s_addr & self.BMASK == 0) # addr is 8-byte aligned
@@ -183,6 +181,11 @@ class epoch:
 				cl = cacheline(s_cl)
 				self.nwrite_cacheline(cl, b_idx)
 
+			if((e_addr + 1) & self.BMASK != 0):
+				cl = cacheline(e_addr & ~self.CMASK)
+				print "4.1)", e_cbytes, "b sa=", hex(e_addr & ~self.CMASK)		
+				self.cwrite_cacheline(cl)
+				
 			return e_addr & ~self.CMASK
 
 		
@@ -271,7 +274,7 @@ class epoch:
 		assert end_time >= self.start_time
 
 		self.end_time = end_time
-		self.size = self.get_size()
+#		self.size = self.get_size()
 		cwrt_set = self.cwrt_set
 		nwrt_set = self.nwrt_set
 		etype = self.etype
@@ -334,9 +337,11 @@ class epoch:
 	def get_nwrt_set_sz(self):
 		n_buf = 0
 		for a,cl in self.nwrt_set.iteritems():
+			print hex(cl.get_addr()), cl.get_dirtyness()
 			n_buf += cl.get_dirtyness()
 		
-		return n_buf / self.BSIZE
+		print "nwrt_sz", n_buf, float(n_buf)/ float(self.BSIZE)
+		return float(n_buf) / float(self.BSIZE)
 
 	def get_size(self):
 		return len(self.cwrt_set) + len(self.rd_set) + self.get_nwrt_set_sz()
