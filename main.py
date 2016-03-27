@@ -45,7 +45,7 @@ et = etable(tname)
 #ft = flow_table(tname)
 n_tl = 0
 
-try:
+for i in range(0,1):
 	for tl in tf:
 		
 		n_tl += 1;
@@ -83,9 +83,9 @@ try:
 				#else:
 				#	curr.clear_call_chain()
 		
-except Exception as inst:
-	print "Failure to unzip", sys.exc_info()[0] # or inst
-	et.commit()
+#except Exception as inst:
+#	print "Failure to unzip", sys.exc_info()[0] # or inst
+#	et.commit()
 	#ft.commit()
 
 et.commit()

@@ -12,6 +12,8 @@ class smt:
 			sa = int(sa, 16)
 			ea = sa + sz - 1 # This prevents an off-by-one error
 			ecl = ea & ~(63)
+			if ecl !=r :
+				print hex(ecl), hex(r)
 			assert ecl == r
 
 	def do_tentry(self, te):

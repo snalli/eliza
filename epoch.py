@@ -6,6 +6,8 @@ class epoch:
 	epoch_types = set(['null', 'rd-only','true'])
 	CMASK = 0x3f
 	CSIZE = 64
+	BMASK = 0x7
+	BSIZE = 8
 	
 	def __init__(self, tid, time):
 		self.rd_set = {}
@@ -36,6 +38,15 @@ class epoch:
 		e_cl = e_addr & ~(self.CMASK)
 		return 1 + ((e_cl - s_cl)/self.CSIZE)
 		
+	def get_n_bi(self, s_addr, size):
+		# s_addr is 8-byte aligned
+		# size is a mutiple of 8
+		e_addr = s_addr + size - 1
+		assert ((e_addr + 0x1) & self.BMASK == 0)
+		s_bi = s_addr & ~(self.BMASK)
+		e_bi = e_addr & ~(self.BMASK)
+		return 1 + ((e_bi - s_bi)/self.BSIZE)
+
 	def ecl(self, s_addr, size):
 		e_addr = s_addr + size - 1
 		s_cl = s_addr & ~(self.CMASK)
@@ -85,17 +96,94 @@ class epoch:
 	def nwrite(self, te):
 		addr = te.get_addr()
 		size = te.get_size()
-
 		s_addr = int(addr, 16)
+
 		assert size > 0
 		assert s_addr > 0
-		n_cl = self.get_n_cl(s_addr, size)
-		s_cl = s_addr & ~(self.CMASK)
-		for i in range(0, n_cl):
-			cl = cacheline(s_cl + i*self.CSIZE)
-			self.nwrite_cacheline(cl)
+		
+		'''
+		It is wise to not intriduce another abstraction of a buffer item
+		but think in terms of whole or partially-dirty cachelines.
+		This makes programming easier. When you store to a cacheline,
+		you can pass its address to the WCB and invalidate the line. This
+		would not have been possible if you used buffer item abstraction.
+		
+		Further, there are two conditions to write non-temporally :
+		1. The start address of every write must be 8-byte aligned
+		2. There must be at least 8-bytes to write
+		
+		'''
+		
+		if size < self.BSIZE:
+			cl = cacheline(s_addr & ~self.CMASK)
+			self.cwrite_cacheline(cl)
+			
+			e_addr = s_addr + size - 1
+			print "1)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
+			cl = cacheline(e_addr & ~self.CMASK)
+			self.cwrite_cacheline(cl)
 
-		return s_cl + i*self.CSIZE
+			return e_addr & ~self.CMASK
+		elif size == self.BSIZE:
+			if (s_addr & self.BMASK == 0):
+				cl = cacheline(s_addr & ~self.CMASK)
+				b_idx = (s_addr - (s_addr & ~self.CMASK)) / self.BSIZE
+				self.nwrite_cacheline(cl, b_idx)
+				print "2)", size, "b sa/ea=", hex(s_addr & ~self.CMASK), " b_idx=", b_idx
+				
+				return s_addr & ~self.CMASK
+			else:
+				cl = cacheline(s_addr & ~self.CMASK)
+				self.cwrite_cacheline(cl)
+				
+				e_addr = s_addr + size - 1
+				print "3)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
+				cl = cacheline(e_addr & ~self.CMASK)
+				self.cwrite_cacheline(cl)
+					
+				return e_addr & ~self.CMASK
+		elif size > self.BSIZE:
+
+			s_cbytes = 0
+			if (s_addr & self.BMASK != 0):
+				s_cbytes = (s_addr & ~self.BMASK) + self.BSIZE - s_addr
+				cl = cacheline(s_addr & ~self.CMASK)
+				print "4.0)", s_cbytes, "b sa=", hex(s_addr & ~self.CMASK)		
+				self.cwrite_cacheline(cl)
+				s_addr = (s_addr & ~self.BMASK) + self.BSIZE
+				size = size - s_cbytes
+		
+			e_cbytes = 0	
+			e_addr = s_addr + size - 1
+			if((e_addr + 1) & self.BMASK != 0):
+				e_cbytes = e_addr - (e_addr & ~self.BMASK) + 1
+				cl = cacheline(e_addr & ~self.CMASK)
+				print "4.1)", e_cbytes, "b sa=", hex(e_addr & ~self.CMASK)		
+				self.cwrite_cacheline(cl)
+				size = size - e_cbytes
+				
+			print "4.2)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)		
+			if size == 0:
+				return e_addr & ~self.CMASK
+			
+			assert size > 0
+			assert (size % 8 == 0) # size is multiple of 8
+			assert s_addr > 0 
+			assert (s_addr & self.BMASK == 0) # addr is 8-byte aligned
+		
+			n_bi = self.get_n_bi(s_addr, size)
+			s_bi = s_addr
+			for i in range(0, n_bi):
+			
+				__s_bi = s_bi + i*self.BSIZE
+				s_cl = __s_bi & ~self.CMASK
+				b_idx = (__s_bi - s_cl)/self.BSIZE
+			
+				print "5) 8 b, sa_b=", hex(__s_bi), " b_idx=", b_idx
+				cl = cacheline(s_cl)
+				self.nwrite_cacheline(cl, b_idx)
+
+			return e_addr & ~self.CMASK
 
 		
 	def do_nothing(self, te):
@@ -105,6 +193,7 @@ class epoch:
 		assert self.etype in self.epoch_types
 
 		__addr = cl.get_addr()
+		assert (__addr & self.CMASK == 0)
 
 		# Refer to state diagram
 		if __addr not in self.cwrt_set:
@@ -127,6 +216,7 @@ class epoch:
 		assert self.etype in self.epoch_types
 
 		__addr = cl.get_addr()
+		assert (__addr & self.CMASK == 0)
 
 		if __addr in self.rd_set:
 			self.rd_set.pop(__addr)
@@ -139,16 +229,21 @@ class epoch:
 		if __addr not in self.cwrt_set:
 			self.cwrt_set[__addr] = cl
 		
+		cl = self.cwrt_set[__addr]
+		cl.dirty_all()
+		
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
 			self.etype = 'true'
 
 		assert (__addr in self.cwrt_set)
 		assert (self.etype in self.epoch_types) and (self.etype == 'true')
 
-	def nwrite_cacheline(self, cl):
+	def nwrite_cacheline(self, cl, b_idx):
+		assert b_idx > -1 and b_idx < 8
 		assert self.etype in self.epoch_types
-
+		
 		__addr = cl.get_addr()
+		assert (__addr & self.CMASK == 0)
 
 		if __addr in self.rd_set:
 			self.rd_set.pop(__addr)
@@ -160,6 +255,9 @@ class epoch:
 
 		if __addr not in self.nwrt_set:
 			self.nwrt_set[__addr] = cl
+		
+		cl = self.nwrt_set[__addr]
+		cl.dirty(b_idx)
 		
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
 			self.etype = 'true'
@@ -234,10 +332,14 @@ class epoch:
 		return len(self.cwrt_set)
 	
 	def get_nwrt_set_sz(self):
-		return len(self.nwrt_set)
+		n_buf = 0
+		for a,cl in self.nwrt_set.iteritems():
+			n_buf += cl.get_dirtyness()
+		
+		return n_buf / self.BSIZE
 
 	def get_size(self):
-		return len(self.cwrt_set) + len(self.rd_set) + len(self.nwrt_set)
+		return len(self.cwrt_set) + len(self.rd_set) + self.get_nwrt_set_sz()
 	
 	def is_true(self):
 		if self.etype == 'true':

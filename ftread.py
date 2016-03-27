@@ -16,20 +16,21 @@ class ftread:
 				te.set_type(te_type)
 				break
 				
-		# if te.is_valid() is False:
-		#	del te
-		#	return None
+		if te.is_valid() is False:
+			del te
+			return None
 		
 		l = tl.split()
 		try:
-			te.set_tid(int(l[0].split('-')[1]))		
+			l0 = l[0].split('-')
+			te.set_tid(int(l0[len(l0)-1]))		
 			te.set_time(float(l[3].split(':')[0]))
 		except:
 			return None
 		
 		
 		if te.is_valid() is True:
-			te.set_callee(l[4].split(':')[0])
+			#te.set_callee(l[4].split(':')[0])
 			
 			__l = l[5].split(':')	
 			if te.need_arg() is True:
