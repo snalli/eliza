@@ -83,7 +83,7 @@ class epoch:
 		s_cl = s_addr & ~(self.CMASK)
 		for i in range(0, n_cl):
 			cl = cacheline(s_cl + i*self.CSIZE)
-			print hex(s_cl)
+			#print hex(s_cl)
 			self.cwrite_cacheline(cl)
 
 		return s_cl + i*self.CSIZE
@@ -123,7 +123,7 @@ class epoch:
 			self.cwrite_cacheline(cl)
 			
 			e_addr = s_addr + size - 1
-			print "1)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
+			#print "1)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
 			cl = cacheline(e_addr & ~self.CMASK)
 			self.cwrite_cacheline(cl)
 
@@ -133,7 +133,7 @@ class epoch:
 				cl = cacheline(s_addr & ~self.CMASK)
 				b_idx = (s_addr - (s_addr & ~self.CMASK)) / self.BSIZE
 				self.nwrite_cacheline(cl, b_idx)
-				print "2)", size, "b sa/ea=", hex(s_addr & ~self.CMASK), " b_idx=", b_idx
+				#print "2)", size, "b sa/ea=", hex(s_addr & ~self.CMASK), " b_idx=", b_idx
 				
 				return s_addr & ~self.CMASK
 			else:
@@ -141,7 +141,7 @@ class epoch:
 				self.cwrite_cacheline(cl)
 				
 				e_addr = s_addr + size - 1
-				print "3)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
+				# print "3)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
 				cl = cacheline(e_addr & ~self.CMASK)
 				self.cwrite_cacheline(cl)
 					
@@ -152,7 +152,7 @@ class epoch:
 			if (s_addr & self.BMASK != 0):
 				s_cbytes = (s_addr & ~self.BMASK) + self.BSIZE - s_addr
 				cl = cacheline(s_addr & ~self.CMASK)
-				print "4.0)", s_cbytes, "b sa=", hex(s_addr & ~self.CMASK)		
+				# print "4.0)", s_cbytes, "b sa=", hex(s_addr & ~self.CMASK)		
 				self.cwrite_cacheline(cl)
 				s_addr = (s_addr & ~self.BMASK) + self.BSIZE
 				size = size - s_cbytes
@@ -163,7 +163,7 @@ class epoch:
 				e_cbytes = e_addr - (e_addr & ~self.BMASK) + 1
 				size = size - e_cbytes
 				
-			print "4.2)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)		
+			# print "4.2)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)		
 		
 			assert (size % 8 == 0) # size is multiple of 8
 			assert s_addr > 0 
@@ -177,13 +177,13 @@ class epoch:
 				s_cl = __s_bi & ~self.CMASK
 				b_idx = (__s_bi - s_cl)/self.BSIZE
 			
-				print "5) 8 b, sa_b=", hex(__s_bi), " b_idx=", b_idx
+				# print "5) 8 b, sa_b=", hex(__s_bi), " b_idx=", b_idx
 				cl = cacheline(s_cl)
 				self.nwrite_cacheline(cl, b_idx)
 
 			if((e_addr + 1) & self.BMASK != 0):
 				cl = cacheline(e_addr & ~self.CMASK)
-				print "4.1)", e_cbytes, "b sa=", hex(e_addr & ~self.CMASK)		
+				# print "4.1)", e_cbytes, "b sa=", hex(e_addr & ~self.CMASK)		
 				self.cwrite_cacheline(cl)
 				
 			return e_addr & ~self.CMASK
@@ -337,10 +337,10 @@ class epoch:
 	def get_nwrt_set_sz(self):
 		n_buf = 0
 		for a,cl in self.nwrt_set.iteritems():
-			print hex(cl.get_addr()), cl.get_dirtyness()
+			# print hex(cl.get_addr()), cl.get_dirtyness()
 			n_buf += cl.get_dirtyness()
 		
-		print "nwrt_sz", n_buf, float(n_buf)/ float(self.BSIZE)
+		# print "nwrt_sz", n_buf, float(n_buf)/ float(self.BSIZE)
 		return float(n_buf) / float(self.BSIZE)
 
 	def get_size(self):

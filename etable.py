@@ -1,21 +1,49 @@
 from epoch import epoch
 import sqlite3
+import sys
+import errno
+import time
+import os
 class etable:
-	def __init__(self, name):
+	
+	'''
+	Created a database identified using timestamp
+	'''
+	
+	BUFSIZE = 1000000
+	
+	def __init__(self, name, db):
 		assert name is not None
+		self.db = db
+		if self.db is False:
+			return
+		self.buf = []
+		self.buflen = 0
+		self.tno = 0
 		self.tname = str(name)
-		self.dbname = self.tname + '.db'
+		self.dbname = 'db/' + str(os.path.basename(self.tname)) + "_" + \
+					str(time.strftime("%d%b%H%M%S")).lower() + '.db'
 		self.conn = sqlite3.connect(self.dbname)
 		self.c = self.conn.cursor()
 		self.c.execute('''create table if not exists '%s'
-			(id text, type text, esize real, wsize real, 
-			 cwsize integer,
+			(id text, type text, 
+			 esize real, wsize real, cwsize integer,
 			 stime real, etime real,
-			 tid integer, primary key (id))''' % self.tname)
+			 tid integer, 
+			 r1 real, r2 real, r3 real, r4 real, r5 real,
+			 primary key (id))''' % self.tname)
+			 
+		'''
+			r* are reserved fields for future use
+		'''
 
 	def insert(self, ep):
-		eid = str(ep.get_tid()) + '.' + str(ep.get_end_time())
+		if self.db is False:
+			return
+			
 		etype = ep.get_epoch_type()
+		eid = self.tno
+		self.tno += 1
 		cwsize = ep.get_cwrt_set_sz()
 		wsize  = float(cwsize) + ep.get_nwrt_set_sz()
 		esize  = wsize + float(ep.get_rd_set_sz())
@@ -27,14 +55,30 @@ class etable:
 
 		t =  (eid, etype, esize, wsize, cwsize,
 		        stime, etime, tid)
-
+		
+		self.buf.append(t) # Not buf += t
+		self.buflen += 1;
+		if (self.buflen == self.BUFSIZE):
+			print "Inserting %d tuples" % self.buflen
+			self.drain()
+			assert self.buflen == 0
+		
+	def drain(self):
+		c = self.c
+		tname = self.tname
 		try:
-			print t
-			c.execute("insert into '%s' values (?,?,?,?,?,?,?,?)" % tname, t)
+			'''This should always succeed as we create a new database each time '''
+			c.executemany("insert into '%s' values (?,?,?,?,?,?,?,?)" % tname, self.buf)
+			self.buflen = 0
+			self.buf = []
+			self.conn.commit()
 		except:
+			self.conn.commit()
 			print "fatal : cannot insert into db"
 			sys.exit(errno.EIO)
 
 	def commit(self):
-		self.conn.commit()
+		if self.db is False:
+			return
+		self.drain()
 

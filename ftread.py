@@ -30,7 +30,7 @@ class ftread:
 		
 		
 		if te.is_valid() is True:
-			#te.set_callee(l[4].split(':')[0])
+			te.set_callee(l[4].split(':')[0])
 			
 			__l = l[5].split(':')	
 			if te.need_arg() is True:

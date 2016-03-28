@@ -11,21 +11,28 @@ import argparse
 import traceback
 
 ttypes = (['ftrace', 'utrace'])
+debugl = [1,2,3,4]
 
 parser = argparse.ArgumentParser(prog="eliza", description="A tool to analyze epochs")
 parser.add_argument('-f', dest='tfile', required=True, help="Gzipped trace file")
 parser.add_argument('-t', dest='ttype', required=True, help="Type of trace file", choices=ttypes)
+parser.add_argument('-d', dest='debug', default = 0, help="Debug levels", choices=debugl)
+parser.add_argument('-b', dest='db', action='store_true', default=False, help="Create database")
+parser.add_argument('-w', dest='flow', action='store_true', default=False, help="Get control flow of an epoch")
 parser.add_argument('-p', '--print', dest='pt', action='store_true', default=False, help="Print trace")
 parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1', help="Display version and quit")
 
 try:
 	args = parser.parse_args()
 except:
-	parser.exit(status=0, message=parser.print_help())
+	# parser.exit(status=0, message=parser.print_help())
+	sys.exit(0)
 
 tfile = args.tfile
 ttype = args.ttype
-pt = args.pt 
+pt = args.pt
+db = args.db
+flow = args.flow
 
 if ttype == 'ftrace':
 	tread = ftread()
@@ -41,8 +48,8 @@ except:
 	
 m_threads = {}
 tname = tfile.split('.')[0]
-et = etable(tname)
-#ft = flow_table(tname)
+et = etable(tname, db)
+ft = flow_table(tname, flow)
 n_tl = 0
 
 for i in range(0,1):
@@ -68,10 +75,10 @@ for i in range(0,1):
 		#print l
 		
 		if tid not in m_threads:
-			m_threads[tid] = smt(tid, time)
+			m_threads[tid] = smt(tid, time, flow)
 		
 		curr = m_threads[tid]
-		# curr.update_call_chain(caller, callee)
+		curr.update_call_chain(caller, callee)
 		
 		if te.is_valid() is True:
 			ep = curr.do_tentry(te)
@@ -79,9 +86,9 @@ for i in range(0,1):
 			if ep is not None:
 				et.insert(ep)
 				#if ep.is_rd_only() is True:
-				#	ft.insert(curr.get_call_chain(), curr.get_tid(), ep.get_start_time(), ep.get_end_time())
+				ft.insert(curr.get_call_chain(), curr.get_tid(), ep.get_start_time(), ep.get_end_time())
 				#else:
-				#	curr.clear_call_chain()
+				curr.clear_call_chain()
 		
 #except Exception as inst:
 #	print "Failure to unzip", sys.exc_info()[0] # or inst

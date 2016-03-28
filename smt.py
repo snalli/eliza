@@ -2,8 +2,9 @@ from epoch import epoch
 from tentry import tentry
 
 class smt:
-	def __init__(self, tid, time):
+	def __init__(self, tid, time, flow):
 		self.tid = tid
+		self.flow = flow
 		self.ep = None #epoch(tid, time)
 		self.ep_ops = None #self.ep.get_ep_ops()
 		self.call_chain = []
@@ -68,6 +69,9 @@ class smt:
 
 	
 	def update_call_chain(self, caller, callee):
+		if self.flow is False:
+			return
+			
 		l = len(self.call_chain)
 		
 		if caller != 'null':
@@ -77,7 +81,9 @@ class smt:
 				self.call_chain.append(caller)
 		
 		if callee == 'null':
-			print "(update_call_chain)", self.tid, self.time
+			# print "(update_call_chain)", self.tid, self.time
+			# callee cannot be null because the processor always is 
+			# inside a callee !
 			assert callee != 'null'
 		else:
 			if l == 0:
@@ -86,8 +92,11 @@ class smt:
 				self.call_chain.append(callee)
 	
 	def get_call_chain(self):
+		if self.flow is False:
+			return None
+			
 		if len(self.call_chain) == 0:
-			print "(get_call_chain)", tid
+			# print "(get_call_chain)", tid
 			assert len(self.call_chain) != 0
 		else:
 			call_str = 'S'
