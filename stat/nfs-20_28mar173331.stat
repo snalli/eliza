@@ -1,0 +1,10 @@
+DB                : stat/nfs-20_28mar173331.stat
+Total epochs      : 6834350
+Total null epochs : 492774
+Average duration  : 0.000480167419725 secs 
+95-tile epoch size: 65.0
+5-tile epoch size : 1.0
+Median epoch size : 2.0
+Average epoch sz  : 16.549809996
+Max epoch size    : 108569.0
+Min epoch size    : 0.125

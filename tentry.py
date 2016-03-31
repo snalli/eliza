@@ -17,6 +17,11 @@ class tentry:
 					    commit_ops, 
 					    fence_ops, 
 					    tx_delims)
+					    
+	te_pm_ref   = set().union(
+						c_write_ops,
+						n_write_ops,
+						c_read_ops)
 	
 	delims      = set().union(
 						commit_ops,
@@ -31,10 +36,23 @@ class tentry:
 		self.size = 0
 		self.caller = 'null'
 		self.callee = 'null'
-		return None
+
+
+	def reset(self):
+		self.tid = 0
+		self.time = 0.0
+		self.te_type = 'INV'
+		self.addr = '0'
+		self.size = 0
+		self.caller = 'null'
+		self.callee = 'null'
+
 
 	def get_types(self):
 			return self.te_types
+			
+	def get_pm_ref(self):
+			return self.te_pm_ref
 	
 	def is_valid(self):
 		if self.te_type != 'INV':
@@ -42,6 +60,9 @@ class tentry:
 		else:
 			return False
 	
+	def invalidate(self):
+		self.te_type = 'INV'
+		
 	def get_tid(self):
 		return self.tid
 

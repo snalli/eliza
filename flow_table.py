@@ -30,7 +30,7 @@ class flow_table:
 		try:
 			c.execute("insert into '%s' values (?,?,?,?,?)" % tname, t)
 		except:
-			print "failure to insert call chain in flow db"
+			#print "failure to insert call chain in flow db"
 			self.commit()
 			sys.exit(-1)
 

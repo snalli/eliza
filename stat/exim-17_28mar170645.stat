@@ -1,0 +1,10 @@
+DB                : stat/exim-17_28mar170645.stat
+Total epochs      : 1065906
+Total null epochs : 154202
+Average duration  : 0.0397061525444secs 
+95-tile epoch size: 3.125
+5-tile epoch size : 0.0
+Median epoch size : 1.0
+Average epoch sz  : 3.31875137207
+Max epoch size    : 130.0
+Min epoch size    : 0.0

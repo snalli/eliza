@@ -1,0 +1,10 @@
+DB                : stat/micro-01_28mar173005.stat
+Total epochs      : 12
+Total null epochs : 2
+Average duration  : 7.83333295355e-06 secs 
+95-tile epoch size: 37.1
+5-tile epoch size : 1.0
+Median epoch size : 1.5
+Average epoch sz  : 8.1
+Max epoch size    : 65.0
+Min epoch size    : 1.0

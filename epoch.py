@@ -1,5 +1,6 @@
 from cacheline import cacheline
 from tentry import tentry
+import sys
 class epoch:
 
 	"""A structure per-SMT context"""
@@ -19,16 +20,24 @@ class epoch:
 		self.etype = 'null'
 		self.size = 0
 		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.cwrite, 
-				'PM_I' : self.nwrite, 'PM_L' : self.clflush,
+				'PM_I' : self.nwrite, 'PM_L' : self.do_nothing,
 				'PM_XS' : self.do_nothing, 'PM_XE' : self.do_nothing,
 				'PM_C' : self.do_nothing}
 				
 		self.end_ops = ['PM_N','PM_B']
 
-		assert tid > 0
-		assert self.start_time > 0.0
 		assert self.etype in self.epoch_types
 
+	def reset(self):
+		self.rd_set.clear()
+		self.cwrt_set.clear()
+		self.nwrt_set.clear()
+		self.tid = 0
+		self.start_time = 0.0
+		self.end_time   = 0.0
+		self.etype = 'null'
+		self.size = 0
+		
 	def get_ep_ops(self):
 		return self.ep_ops
 		
@@ -83,7 +92,6 @@ class epoch:
 		s_cl = s_addr & ~(self.CMASK)
 		for i in range(0, n_cl):
 			cl = cacheline(s_cl + i*self.CSIZE)
-			#print hex(s_cl)
 			self.cwrite_cacheline(cl)
 
 		return s_cl + i*self.CSIZE
@@ -117,7 +125,7 @@ class epoch:
 		2. There must be at least 8-bytes to write
 		
 		'''
-		
+
 		if size < self.BSIZE:
 			cl = cacheline(s_addr & ~self.CMASK)
 			self.cwrite_cacheline(cl)
@@ -178,6 +186,7 @@ class epoch:
 				b_idx = (__s_bi - s_cl)/self.BSIZE
 			
 				# print "5) 8 b, sa_b=", hex(__s_bi), " b_idx=", b_idx
+				# print n_bi, hex(s_cl)
 				cl = cacheline(s_cl)
 				self.nwrite_cacheline(cl, b_idx)
 
@@ -208,6 +217,7 @@ class epoch:
 				
 			if __addr not in self.rd_set and __addr not in self.nwrt_set:
 					self.rd_set[__addr] = cl
+					del cl
 		
 		if self.etype == 'null':
 			self.etype = 'rd-only'
@@ -221,6 +231,7 @@ class epoch:
 		__addr = cl.get_addr()
 		assert (__addr & self.CMASK == 0)
 
+		# Refer to state diagram
 		if __addr in self.rd_set:
 			self.rd_set.pop(__addr)
 			assert (__addr not in self.rd_set)
@@ -231,9 +242,9 @@ class epoch:
 
 		if __addr not in self.cwrt_set:
 			self.cwrt_set[__addr] = cl
-		
-		cl = self.cwrt_set[__addr]
-		cl.dirty_all()
+			del cl
+
+		self.cwrt_set[__addr].dirty_all()
 		
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
 			self.etype = 'true'
@@ -248,6 +259,7 @@ class epoch:
 		__addr = cl.get_addr()
 		assert (__addr & self.CMASK == 0)
 
+		# Refer to state diagram
 		if __addr in self.rd_set:
 			self.rd_set.pop(__addr)
 			assert (__addr not in self.rd_set)
@@ -258,9 +270,11 @@ class epoch:
 
 		if __addr not in self.nwrt_set:
 			self.nwrt_set[__addr] = cl
+			if len(self.nwrt_set) > 512:
+				assert False
+			del cl
 		
-		cl = self.nwrt_set[__addr]
-		cl.dirty(b_idx)
+		self.nwrt_set[__addr].dirty(b_idx)
 		
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
 			self.etype = 'true'
@@ -275,11 +289,11 @@ class epoch:
 
 		self.end_time = end_time
 #		self.size = self.get_size()
-		cwrt_set = self.cwrt_set
-		nwrt_set = self.nwrt_set
-		etype = self.etype
+#		cwrt_set = self.cwrt_set
+#		nwrt_set = self.nwrt_set
+#		etype = self.etype
 		
-		return self.merge_sets(nwrt_set, cwrt_set) 
+#		return self.merge_sets(nwrt_set, cwrt_set) 
 		# Nobody cares about this return value
 			
 	def merge_sets(self,a,b):
@@ -316,6 +330,12 @@ class epoch:
 	def get_tid(self):
 		return self.tid
 	
+	def set_tid(self, tid):
+		self.tid = tid
+
+	def set_time(self, time):
+		self.start_time = time
+
 	def get_epoch_type(self):
 		return self.etype
 
@@ -354,6 +374,12 @@ class epoch:
 			
 	def is_rd_only(self):
 		if self.etype == 'rd-only':
+			return True
+		else:
+			return False
+
+	def is_null(self):
+		if self.etype == 'null':
 			return True
 		else:
 			return False
