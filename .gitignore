@@ -5,6 +5,10 @@
 gz/
 db/
 txt/
+stat/
 .*.swp
 *.cfg
 *.pyc
+mypy
+mypy3
+pypy

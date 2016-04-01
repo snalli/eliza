@@ -104,7 +104,7 @@ def analyze():
 
 
 for i in range(0,w):
-	cq = '/dev/shm/' + str(os.path.basename(tfile.split('.')[0])) + '_' + str(i) + '.q'
+	cq = '/dev/shm/.' + str(os.path.basename(tfile.split('.')[0])) + '_' + str(i) + '.q'
 	f = open(cq, 'r')
 	csvr = csv.reader(f)
 	for row in csvr:

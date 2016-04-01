@@ -28,6 +28,17 @@ class epoch:
 
 		assert self.etype in self.epoch_types
 
+	def ep_list(self):
+			
+		cwsize = self.get_cwrt_set_sz()
+		wsize  = float(cwsize) + self.get_nwrt_set_sz()
+		esize  = wsize + float(self.get_rd_set_sz())
+		
+		# t =  (etype, esize, wsize, cwsize,
+		#        stime, etime, r1, r2, r3 ,r4, tid)
+
+		return [self.tid, self.end_time, self.etype, esize, wsize, cwsize, self.start_time]
+
 	def reset(self):
 		self.rd_set.clear()
 		self.cwrt_set.clear()
@@ -217,7 +228,6 @@ class epoch:
 				
 			if __addr not in self.rd_set and __addr not in self.nwrt_set:
 					self.rd_set[__addr] = cl
-					del cl
 		
 		if self.etype == 'null':
 			self.etype = 'rd-only'
@@ -242,7 +252,6 @@ class epoch:
 
 		if __addr not in self.cwrt_set:
 			self.cwrt_set[__addr] = cl
-			del cl
 
 		self.cwrt_set[__addr].dirty_all()
 		
@@ -272,7 +281,6 @@ class epoch:
 			self.nwrt_set[__addr] = cl
 			if len(self.nwrt_set) > 512:
 				assert False
-			del cl
 		
 		self.nwrt_set[__addr].dirty(b_idx)
 		
