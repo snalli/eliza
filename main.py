@@ -1,7 +1,5 @@
 from ftread import ftread
 from smt import smt
-# from etable import etable
-# from flow_table import flow_table
 from ep_stats import ep_stats
 from multiprocessing import Pool, TimeoutError, Process, Queue, Lock
 from multiprocessing.sharedctypes import Value, Array
@@ -10,10 +8,10 @@ from ctypes import Structure
 import gzip
 import time
 import os
+import subprocess
 import sys
 import errno
 import csv
-# import sqlite3
 import argparse
 import traceback
 import gc
@@ -55,7 +53,6 @@ def digest(usrargs, sysargs):
 	n_workers = sysargs[3]
 	myq = open(sysargs[4], 'w')
 	csvq = csv.writer(myq)
-	# myq = sysargs[4]
 	
 	if ttype == 'ftrace':
 		tread = ftread(pid, n_workers)
@@ -80,8 +77,6 @@ def digest(usrargs, sysargs):
 	t_thresh = 10000
 	tid = -1
 	tname = str(os.path.basename(tfile.split('.')[0]))
-	# et = etable(tname, db)
-	# ft = flow_table(tname, flow)
 	est = ep_stats(anlz, 'nil')
 
 	n_tl = 0
@@ -93,7 +88,7 @@ def digest(usrargs, sysargs):
 			if(pt):
 				sys.stdout.write(tl)
 			if(n_tl % BATCH == 0):
-				print "Worker ", pid, "completed ", n_tl, " trace entries", len(m_threads.keys())
+				print "Worker ", pid, "completed ", n_tl, " trace entries"
 			
 			te = tread.get_tentry(tl)
 			if te is None:
@@ -116,14 +111,8 @@ def digest(usrargs, sysargs):
 
 			# curr.update_call_chain(caller, callee)
 		
-	        #if te.is_valid() is True:
-
 			ep = curr.do_tentry(te)
-
-			
 			if ep is not None:
-				#	et.insert(ep)
-				#	ft.insert(curr.get_call_chain(), curr.get_tid(), ep.get_start_time(), ep.get_end_time())
 				t = est.get_tuple(ep)
 
 				t_buf.append(t)
@@ -133,12 +122,7 @@ def digest(usrargs, sysargs):
 						csvq.writerow(t)
 					t_buf = []
 					t_buf_len = 0
-					
-				# est.insert(ep)
 
-
-
-		
 	except Exception as inst:
 		for t in t_buf:
 			csvq.writerow(t)
@@ -147,20 +131,11 @@ def digest(usrargs, sysargs):
 
 		print "Failure to unzip", sys.exc_info()[0] # or inst
 		sys.exit(0)
-	#	et.commit()
-	#ft.commit()
+
 	for t in t_buf:
 		csvq.writerow(t)
 	t_buf = []
 	t_buf_len = 0
-
-	# et.commit()
-	# est.analyze()
-	#ft.commit()
-
-#class ep_tuple(Structure):
-#	_fields_ = [('eid', c_int), ('etype',), (esize,), (wsize,), (cwsize,)
-#		        (stime,), (etime,), (r1,), (r2,), (r3,), (r4,), (tid,)]
 
 if __name__ == '__main__':
 		
@@ -188,14 +163,5 @@ if __name__ == '__main__':
 		for pid,p in pmap.items():
 			print "Parent waiting for worker", pid
 			p.join()
-			
-		#est = ep_stats(args.anlz, 'stat/' + str(args.tfile.split('.')[0]) + '.stat')			
-		#for cq in qs.values():
-		#	f = open(cq, 'r')
-		#	csvr = csv.reader(f)
-		#	for row in csvr:
-		#		est.insert_l(row)
-		#	f.close()
 		
-		#est.analyze()
-			
+		# subprocess.call("mypy", "analyze.py", "-f", args.tfile, "-w", w)
