@@ -80,6 +80,7 @@ def analyze():
 	max_sz = np.amax(a)
 	min_sz = np.amin(a) # amino
 	tot = buflen
+	nlpcnt = float(tnull)/float(buflen) * 100
 		
 	''' get avg duration in secs '''
 	d = np.array([t[6]-t[5] for t in buf])
@@ -89,9 +90,9 @@ def analyze():
 	f = open(fname, 'w')
 	if f is not None :
 		''' Better way of reporting stats ? '''
-		f.write("DB                : "  + str(fname) + "\n")
-		f.write("Total epochs      : "  + str(buflen) + "\n")
-		f.write("Total null epochs : "  + str(tnull) + "\n")
+		f.write("Trace file        : "  + str(tfile) + "\n")
+		f.write("Total epochs      : "  + str("{:,}".format(buflen)) + "\n")
+		f.write("Total null epochs : "  + str("{:,}".format(tnull)) + " (" + str(nlpcnt) + "%)\n")
 		f.write("Average duration  : "  + str(avg_d) + " secs \n")
 		f.write("95-tile epoch size: "  + str(p95)   + "\n")
 		f.write("5-tile epoch size : "  + str(p5)    + "\n")
@@ -99,7 +100,7 @@ def analyze():
 		f.write("Average epoch sz  : "  + str(avg_s) + "\n")
 		f.write("Max epoch size    : "  + str(max_sz) + "\n")
 		f.write("Min epoch size    : "  + str(min_sz) + "\n")
-		
+		f.write("\n* All epoch sizes are in terms of 64B cache blocks \n")		
 		f.close()
 
 

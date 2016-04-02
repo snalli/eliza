@@ -77,7 +77,7 @@ def digest(usrargs, sysargs):
 	m_threads = {} #tls
 	t_buf = []
 	t_buf_len = 0
-	t_thresh = 10000
+	t_thresh = int(BATCH/10)
 	tid = -1
 	tname = str(os.path.basename(tfile.split('.')[0]))
 	est = ep_stats(anlz, 'nil')
@@ -86,10 +86,6 @@ def digest(usrargs, sysargs):
 
 	try:
 		for tl in os.popen(cmd, 'r', 32768): # input is global
-			n_tl += 1;
-
-			if(n_tl % BATCH == 0):
-				print "Worker ", pid, "completed ", n_tl, " trace entries"
 			
 			te = tread.get_tentry(tl)
 			if te is None:
@@ -97,6 +93,11 @@ def digest(usrargs, sysargs):
 
 			if te.get_tid() in avoid:
 				continue
+
+			n_tl += 1;
+
+			if(n_tl % BATCH == 0):
+				print "Worker ", pid, "completed ", str("{:,}".format(n_tl)) , " trace entries"
 
 			if pt > 0: # pt = 1
 				op.write(tl)
@@ -173,6 +174,11 @@ if __name__ == '__main__':
 		shmmap = {}
 		qs = {}
 
+		print "Calculating number of trace entries... please wait"
+		cmd = "zcat " + str(args.tfile) + " | wc -l"
+		print "$", cmd
+		os.system(cmd)
+		
 		for pid in range(0, w):
 			qs[pid] = '/dev/shm/.' + str(os.path.basename(args.tfile.split('.')[0])) + '_' + str(pid) + '.q'
 			pmap[pid] = Process(target=digest, args=(args, [pid, [], 1000000, w, qs[pid]]))
@@ -183,4 +189,5 @@ if __name__ == '__main__':
 			print "Parent waiting for worker", pid
 			p.join()
 		
-		# subprocess.call("mypy", "analyze.py", "-f", args.tfile, "-w", w)
+		cmd = 'mypy analyze.py -f ' + str(args.tfile) + ' -w' + str(w)
+		os.system(cmd)
