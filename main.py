@@ -27,7 +27,11 @@ parser.add_argument('-y', dest='ttype', required=True, help="Type of trace file"
 parser.add_argument('-w', dest='workers', default = 1, help="Number of workers")
 parser.add_argument('-b', dest='db', action='store_true', default=False, help="Create database")
 parser.add_argument('-o', dest='flow', action='store_true', default=False, help="Get control flow of an epoch")
-parser.add_argument('-nz', dest='anlz', action='store_false', default=True, help="Analyze and collect some stats")
+parser.add_argument('-nz', dest='anlz', action='store_false', default=True, help="Ignore analysis")
+parser.add_argument('-ni', dest='nti', action='store_false', default=True, help="Ignore movnti")
+parser.add_argument('-nf', dest='clf', action='store_false', default=True, help="Ignore clflush/clwb")
+parser.add_argument('-ns', dest='st', action='store_false', default=True, help="Ignore stores")
+parser.add_argument('-nl', dest='ld', action='store_false', default=True, help="Ignore loads")
 parser.add_argument('-p', '--print', dest='pt', default=0, help="Set verbosity and print trace for debugging", choices=verbosity)
 parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1', help="Display version and quit")
 
@@ -58,7 +62,8 @@ def digest(usrargs, sysargs):
 	if pt > 0:
 		op = open("/scratch/" + str(os.path.basename(tfile).split('.')[0]) + '_' + str(pid) + '.t', 'w')	
 	if ttype == 'ftrace':
-		tread = ftread(pid, n_workers)
+		# tread = ftread(pid, n_workers)
+		tread = ftread(usrargs, sysargs)
 	elif ttype == 'utrace':
 		print "Unimplemented trace processor"
 		sys.exit(errno.EINVAL) # for now, later tread = utread()
@@ -80,7 +85,7 @@ def digest(usrargs, sysargs):
 	t_thresh = int(BATCH/10)
 	tid = -1
 	tname = str(os.path.basename(tfile.split('.')[0]))
-	est = ep_stats(anlz, 'nil')
+	est = ep_stats()
 
 	n_tl = 0
 
@@ -123,40 +128,47 @@ def digest(usrargs, sysargs):
 				if pt > 3:
 					op.write('ep = ' + str(ep.ep_list()) + '\n')
 
-				t = est.get_tuple(ep)
+				''' 
+					The analysis module will always return, but you
+					must decide whether to call into it or not.
+				'''
+				if anlz is True:
+					t = est.get_tuple(ep)
 
-				t_buf.append(t)
-				t_buf_len += 1
+					t_buf.append(t)
+					t_buf_len += 1
 
-				if pt > 4:
-					op.write('tu[' + str(t_buf_len - 1) + '] = ' + str(t_buf[t_buf_len-1]) + '\n')
+					if pt > 4:
+						op.write('tu[' + str(t_buf_len - 1) + '] = ' + str(t_buf[t_buf_len-1]) + '\n')
 
-				if t_buf_len == t_thresh:
-					for t in t_buf:
-						csvq.writerow(t)
+					if t_buf_len == t_thresh:
+						for t in t_buf:
+							csvq.writerow(t)
 
-					myq.flush()
-					t_buf = []
-					t_buf_len = 0
+						myq.flush()
+						t_buf = []
+						t_buf_len = 0
 
 	except Exception as inst:
 
+		if anlz is True:
+			for t in t_buf:
+				csvq.writerow(t)
+
+			myq.flush()
+			t_buf = []
+			t_buf_len = 0
+
+		print "Failure to proceed", sys.exc_info()[0] # or inst
+		sys.exit(0)
+
+	if anlz is True:
 		for t in t_buf:
 			csvq.writerow(t)
 
 		myq.flush()
 		t_buf = []
 		t_buf_len = 0
-
-		print "Failure to unzip", sys.exc_info()[0] # or inst
-		sys.exit(0)
-
-	for t in t_buf:
-		csvq.writerow(t)
-
-	myq.flush()
-	t_buf = []
-	t_buf_len = 0
 
 if __name__ == '__main__':
 		
@@ -189,5 +201,8 @@ if __name__ == '__main__':
 			print "Parent waiting for worker", pid
 			p.join()
 		
-		cmd = 'mypy analyze.py -f ' + str(args.tfile) + ' -w' + str(w)
-		os.system(cmd)
+		if args.anlz is True:
+			cmd = 'mypy analyze.py -f ' + str(args.tfile) + ' -w' + str(w)
+			os.system(cmd)
+		else:
+			print "No analysis performed"

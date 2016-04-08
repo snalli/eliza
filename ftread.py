@@ -4,23 +4,55 @@ class ftread:
 	
 	delim = ':'
 	
-	def __init__(self, pid, n):
-		self.pid = pid
-		self.n = n
+	def __init__(self, usrargs, sysargs):
+		self.pid = sysargs[0]
+		self.n = sysargs[3]
+		
+		self.nti = usrargs.nti
+		self.clf = usrargs.clf
+		self.st = usrargs.st
+		self.ld = usrargs.ld
+		
 		self.te = tentry()
+		
 		self.te_pm_ref = list(self.te.get_pm_ref())
 		self.other_te_types = list(self.te.get_types() - self.te.get_pm_ref())
+		
+		self.NTI = list(self.te.n_write_ops)
+		self.CLF = list(self.te.flush_ops)
+		self.LD  = list(self.te.c_read_ops)
+		self.ST  = list(self.te.c_write_ops)
+		
 		return None
 	
 	def get_tentry(self, tl):
 		assert tl is not None
 		te = tentry()
 
+		if self.nti is False:
+			for t in self.NTI:
+				if t in tl:
+					return None
+		if self.clf is False:
+			for t in self.CLF:
+				if t in tl:
+					return None
+		if self.st is False:
+			for t in self.ST:
+				if t in tl:
+					return None	
+		if self.ld is False:
+			for t in self.LD:
+				if t in tl:
+					return None
+
+		''' Most frequently occuring tentry types '''
 		for te_type in self.te_pm_ref:
 			if te_type in tl:
 				te.set_type(te_type)
 				break
 		
+		''' Rarely occurring tentry types '''
 		if te.is_valid() is False:
 			for te_type in self.other_te_types:
 				if te_type in tl:

@@ -31,8 +31,9 @@ class smt:
 				self.ep_ops = self.ep.get_ep_ops()
 				
 				r = self.ep_ops[te_type](te)
+				''' Size has to be greater than 0'''
 				self.sanity(te.get_addr(), te.get_size(), r)
-					
+
 				assert self.ep.is_true()
 				
 			elif te.is_fence():
