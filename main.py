@@ -1,4 +1,5 @@
 from ftread import ftread
+from utread import utread
 from smt import smt
 from ep_stats import ep_stats
 from multiprocessing import Pool, TimeoutError, Process, Queue, Lock
@@ -32,7 +33,7 @@ parser.add_argument('-ni', dest='nti', action='store_false', default=True, help=
 parser.add_argument('-nf', dest='clf', action='store_false', default=True, help="Ignore clflush/clwb")
 parser.add_argument('-ns', dest='st', action='store_false', default=True, help="Ignore stores")
 parser.add_argument('-nl', dest='ld', action='store_false', default=True, help="Ignore loads")
-parser.add_argument('-p', '--print', dest='pt', default=0, help="Set verbosity and print trace for debugging", choices=verbosity)
+parser.add_argument('-p', '--print', dest='pt', default=0, help="Set verbosity and print trace for debugging (recommended value is 2)", choices=verbosity)
 parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1', help="Display version and quit")
 
 try:
@@ -54,19 +55,20 @@ def digest(usrargs, sysargs):
 
 	pid   = sysargs[0]
 	avoid = sysargs[1]
-	BATCH = sysargs[2]
+	BATCH = sysargs[2]	# Worker emits stmt after processing BATCH entries
 	n_workers = sysargs[3]
 	myq = open(sysargs[4], 'w')
+	printl = sysargs[5] # List of host tids you want to examine, for internal use only
 	csvq = csv.writer(myq)
 
 	if pt > 0:
-		op = open("/scratch/" + str(os.path.basename(tfile).split('.')[0]) + '_' + str(pid) + '.t', 'w')	
+		op = open("/dev/shm/" + str(os.path.basename(tfile).split('.')[0]) + '_' + str(pid) + '.t', 'w')	
 	if ttype == 'ftrace':
 		# tread = ftread(pid, n_workers)
 		tread = ftread(usrargs, sysargs)
 	elif ttype == 'utrace':
-		print "Unimplemented trace processor"
-		sys.exit(errno.EINVAL) # for now, later tread = utread()
+		tread = utread(usrargs, sysargs)
+		# sys.exit(errno.EINVAL) # for now, later tread = utread()
 
 	try:
 		if 'gz' in tfile:
@@ -90,6 +92,7 @@ def digest(usrargs, sysargs):
 	n_tl = 0
 
 	try:
+	# for i in range(0,1):
 		for tl in os.popen(cmd, 'r', 32768): # input is global
 			
 			te = tread.get_tentry(tl)
@@ -105,7 +108,12 @@ def digest(usrargs, sysargs):
 				print "Worker ", pid, "completed ", str("{:,}".format(n_tl)) , " trace entries"
 
 			if pt > 0: # pt = 1
-				op.write(tl)
+				if -1 in printl:
+					# Write all
+					op.write(tl)
+				elif te.get_tid() in printl:
+					# Write only specific tids
+					op.write(tl)
 
 			# caller = te.get_caller()
 			# callee = te.get_callee()
@@ -148,7 +156,7 @@ def digest(usrargs, sysargs):
 						myq.flush()
 						t_buf = []
 						t_buf_len = 0
-
+#	'''
 	except Exception as inst:
 
 		if anlz is True:
@@ -161,7 +169,7 @@ def digest(usrargs, sysargs):
 
 		print "Failure to proceed", sys.exc_info()[0] # or inst
 		sys.exit(0)
-
+#	'''
 	if anlz is True:
 		for t in t_buf:
 			csvq.writerow(t)
@@ -190,10 +198,10 @@ if __name__ == '__main__':
 		cmd = "zcat " + str(args.tfile) + " | wc -l"
 		print "$", cmd
 		os.system(cmd)
-		
+
 		for pid in range(0, w):
 			qs[pid] = '/dev/shm/.' + str(os.path.basename(args.tfile.split('.')[0])) + '_' + str(pid) + '.q'
-			pmap[pid] = Process(target=digest, args=(args, [pid, [], 1000000, w, qs[pid]]))
+			pmap[pid] = Process(target=digest, args=(args, [pid, [], 1000000, w, qs[pid], [-1]]))
 			pmap[pid].start()
 			print "Parent started worker ", pid
 		

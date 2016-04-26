@@ -83,9 +83,11 @@ def cdf(arr, fname):
 	'''
 	# np.histogram
 	for v in arr:
-		if v not in m:
-			m[v] = 0
-		m[v] = m[v] + 1
+		# Ugly hack to draw a graph for 2mrw
+		if v != mx:
+			if v not in m:
+				m[v] = 0
+			m[v] = m[v] + 1
 
 	skeys = sorted(m.keys())
 	
@@ -106,6 +108,7 @@ def cdf(arr, fname):
 	''' Automate this saving ''' 
 	fig = gcf()
 	fig.set_size_inches(24,12.75)
+	''' Graphs are saved in png/ in eliza '''
 	savefig('png/' + os.path.basename(fname).split('.')[0] + '.png', format='png', dpi=100)
 
 	
@@ -115,6 +118,7 @@ def analyze():
 	global buf
 	global buflen
 	global tfile
+	''' Stats are saved in stat/ in eliza '''
 	fname = 'stat/' + os.path.basename(tfile.split('.')[0]) + '_' + str(time.strftime("%d%b%H%M%S")).lower()  + '.stat'
 
 	'''
@@ -124,10 +128,6 @@ def analyze():
 	'''
 
 	tt = [t[2] for t in buf]
-	# For NFS
-	ntt = np.array(tt)
-	ntt = ntt[ntt < 500.0]
-	tt = array(ntt)
 	cdf(tt, fname)
 
 	a = np.array(tt)

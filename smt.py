@@ -25,8 +25,8 @@ class smt:
 		te_type = te.get_type()
 		
 		if self.ep is None: 
-			# Null epoch
 			if te.is_write():
+				# The beginning of a new epoch
 				self.ep = epoch(self.tid, te.get_time())
 				self.ep_ops = self.ep.get_ep_ops()
 				
@@ -37,6 +37,7 @@ class smt:
 				assert self.ep.is_true()
 				
 			elif te.is_fence():
+				# Null epoch
 				self.ep = epoch(self.tid, te.get_time())
 				self.ep_ops = self.ep.get_ep_ops()
 				self.ep.end_epoch(te)
@@ -46,6 +47,7 @@ class smt:
 		else: 
 			# True epoch
 			if te.is_fence():
+				# The end of another epoch
 				self.ep.end_epoch(te)
 				ret = self.ep
 				self.ep = None
