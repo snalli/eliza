@@ -1,6 +1,6 @@
 from cacheline import cacheline
 from tentry import tentry
-import sys
+import sys,os
 class epoch:
 
 	"""A structure per-SMT context"""
@@ -20,12 +20,18 @@ class epoch:
 	BOFF  = 0x7
 	POFF  = 0x0fff
 	
-	def __init__(self, tid, time):
+	def __init__(self, tid, time, usrargs):
 		self.rd_set = {}
 		self.cwrt_set = {}
 		self.nwrt_set = {}
 		self.page_set = {}
+		self.wrt_l = []
 		self.page_span = 0
+		self.usrargs = usrargs
+		if int(self.usrargs.reuse) >= 1:
+			self.reuse = True
+		else:
+			self.reuse = False
 		self.tid = tid
 		self.start_time = time
 		self.end_time   = 0.0
@@ -116,6 +122,9 @@ class epoch:
 		s_cl = s_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
 		for i in range(0, n_cl):
 			cl = cacheline(s_cl + i*self.CSIZE)
+			# Put cl in a list here for WaW calculation
+			if self.reuse is True:
+				self.wrt_l.append(cl.get_addr())
 			self.cwrite_cacheline(cl)
 
 		return s_cl + i*self.CSIZE
@@ -212,6 +221,9 @@ class epoch:
 				# print "5) 8 b, sa_b=", hex(__s_bi), " b_idx=", b_idx
 				# print n_bi, hex(s_cl)
 				cl = cacheline(s_cl)
+				# Put cl in a list for WaW distance calculation
+				# But be careful about multiple writes to the same CL
+				# That can alter the WaW drastically
 				self.nwrite_cacheline(cl, b_idx)
 
 			if((e_addr + 1) & self.BOFF != 0):
@@ -325,6 +337,26 @@ class epoch:
 			self.page_set[k & self.PMASK] = 0
 			
 		self.page_span = len(self.page_set)
+		
+		# return the string of accesses inside this epoch here
+		# or simply dump the list in a file and invoke Rathijit's
+		# reuse tool with the output file name. Use the tid to get
+		# the filename. Make this configurable
+		# Try to see if you can move this out of the epoch code
+		# This epoch code is extremely robust
+		# reuse within threads can show us cascades !
+		# Do all stat collection in the destructor routine, you have
+		# my permission to do it. But don't touch the core of the epoch
+		# code.
+		if self.reuse is True and self.get_cwrt_set_sz() > 0:
+			tfile = self.usrargs.tfile
+			op = open("/dev/shm/." + str(os.path.basename(tfile.split('.')[0])) \
+					+ '-' + str(self.tid) + '.e', 'a')	
+			op.write("beginning_of_epoch " + str(self.get_cwrt_set_sz()) + " \n")
+			for addr in self.wrt_l:
+				op.write(str(hex(addr)) + '\n');
+			op.write("end_of_epoch\n")
+			op.close()
 		
 #		self.size = self.get_size()
 #		cwrt_set = self.cwrt_set

@@ -19,12 +19,11 @@ import gc
 
 ttypes = (['ftrace', 'utrace'])
 verbosity = (['1','2','3','4','5'])
-debugl = [1,2,3,4]
+reuse_t = ['1','2']
 
 parser = argparse.ArgumentParser(prog="eliza", description="A tool to analyze epochs")
 parser.add_argument('-f', dest='tfile', required=True, help="Gzipped trace file")
 parser.add_argument('-y', dest='ttype', required=True, help="Type of trace file", choices=ttypes)
-# parser.add_argument('-d', dest='debug', default = 0, help="Debug levels", choices=debugl)
 parser.add_argument('-w', dest='workers', default = 1, help="Number of workers")
 parser.add_argument('-b', dest='db', action='store_true', default=False, help="Create database")
 parser.add_argument('-o', dest='flow', action='store_true', default=False, help="Get control flow of an epoch")
@@ -33,6 +32,7 @@ parser.add_argument('-ni', dest='nti', action='store_false', default=True, help=
 parser.add_argument('-nf', dest='clf', action='store_false', default=True, help="Ignore clflush/clwb")
 parser.add_argument('-ns', dest='st', action='store_false', default=True, help="Ignore stores")
 parser.add_argument('-nl', dest='ld', action='store_false', default=True, help="Ignore loads")
+parser.add_argument('-u', dest='reuse', default= 0, help="Calculate reuse [1 = Inside an epoch, 2 = Inside a thread, 3 = 1 & 2]", choices=reuse_t)
 parser.add_argument('-p', '--print', dest='pt', default=0, help="Set verbosity and print trace for debugging (recommended value is 2)", choices=verbosity)
 parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1', help="Display version and quit")
 
@@ -42,6 +42,19 @@ except:
 	# parser.exit(status=0, message=parser.print_help())
 	sys.exit(0)
 
+# Objectify this
+def ping_pong(usrargs, sysargs):
+	
+	tfile = usrargs.tfile
+	gtid = sysargs[0]
+	
+	cmd = './reuse/reuse 10 ' + str("/dev/shm/." + \
+									str(os.path.basename(tfile.split('.')[0])) \
+									+ '-' + str(gtid) + '.e')
+	print cmd
+	# os.system(cmd)
+
+	
 def digest(usrargs, sysargs):
 	
 	args = usrargs
@@ -52,6 +65,7 @@ def digest(usrargs, sysargs):
 	db = args.db
 	flow = args.flow
 	anlz = args.anlz
+	reuse = int(args.reuse)
 
 	pid   = sysargs[0]
 	avoid = sysargs[1]
@@ -82,6 +96,7 @@ def digest(usrargs, sysargs):
 		sys.exit(errno.EIO)
 	
 	m_threads = {} #tls
+	m_reuse   = {} #tls
 	t_buf = []
 	t_buf_len = 0
 	t_thresh = int(BATCH/10)
@@ -91,8 +106,8 @@ def digest(usrargs, sysargs):
 
 	n_tl = 0
 
-	try:
-	# for i in range(0,1):
+	# try:
+	for i in range(0,1):
 		for tl in os.popen(cmd, 'r', 32768): # input is global
 			
 			te = tread.get_tentry(tl)
@@ -120,7 +135,7 @@ def digest(usrargs, sysargs):
 			if te.get_tid() != tid:
 				tid = te.get_tid()
 				if tid not in m_threads:
-					m_threads[tid] = smt(tid, te.get_time(), flow)
+					m_threads[tid] = smt(tid, te.get_time(), usrargs)
 				
 				curr = m_threads[tid]			
 
@@ -133,7 +148,7 @@ def digest(usrargs, sysargs):
 			ep = curr.do_tentry(te)
 
 			if ep is not None:
-				if pt > 3:
+				if pt > 2: # pt = 3
 					op.write('ep = ' + str(ep.ep_list()) + '\n')
 
 				''' 
@@ -146,7 +161,7 @@ def digest(usrargs, sysargs):
 					t_buf.append(t)
 					t_buf_len += 1
 
-					if pt > 4:
+					if pt > 3: # pt = 4
 						op.write('tu[' + str(t_buf_len - 1) + '] = ' + str(t_buf[t_buf_len-1]) + '\n')
 
 					if t_buf_len == t_thresh:
@@ -156,7 +171,7 @@ def digest(usrargs, sysargs):
 						myq.flush()
 						t_buf = []
 						t_buf_len = 0
-#	'''
+	'''
 	except Exception as inst:
 
 		if anlz is True:
@@ -169,7 +184,7 @@ def digest(usrargs, sysargs):
 
 		print "Failure to proceed", sys.exc_info()[0] # or inst
 		sys.exit(0)
-#	'''
+	'''
 	if anlz is True:
 		for t in t_buf:
 			csvq.writerow(t)
@@ -177,6 +192,16 @@ def digest(usrargs, sysargs):
 		myq.flush()
 		t_buf = []
 		t_buf_len = 0
+		
+	if reuse >= 1:
+		# For each guest thread context
+		for gtid,ctxt in m_threads.items():
+			m_reuse[gtid] = Process(target=ping_pong, args=(usrargs, [gtid]))
+			m_reuse[gtid].start()
+		
+		for gtid,reuse_worker in m_reuse.items():
+			print "- Worker " + str(pid) + " waiting for reuse worker " + str(gtid)
+			m_reuse[gtid].join()
 
 if __name__ == '__main__':
 		
@@ -209,8 +234,11 @@ if __name__ == '__main__':
 			print "Parent waiting for worker", pid
 			p.join()
 		
+		''' Analysis routines '''
 		if args.anlz is True:
 			cmd = 'mypy analyze.py -f ' + str(args.tfile) + ' -w' + str(w)
 			os.system(cmd)
 		else:
 			print "No analysis performed"
+		
+

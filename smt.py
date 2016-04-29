@@ -1,14 +1,20 @@
 from epoch import epoch
 from tentry import tentry
+import os
 
 class smt:
-	def __init__(self, tid, time, flow):
+	def __init__(self, tid, time, usrargs):
 		self.tid = tid
-		self.flow = flow
+		self.usrargs = usrargs
+		self.flow = usrargs.flow
 		self.ep = None #epoch(0, 0.0)
 		self.ep_ops = None #self.ep.get_ep_ops()
 		self.call_chain = []
-		
+		# Clear away any previous epochs you may have recorded
+		tfile = self.usrargs.tfile
+		op = open("/dev/shm/." + str(os.path.basename(tfile.split('.')[0])) \
+					+ '-' + str(self.tid) + '.e', 'w')		
+		op.close()
 	def sanity(self, sa, sz, r):
 			return
 			sa = int(sa, 16)
@@ -19,6 +25,16 @@ class smt:
 			assert ecl == r
 
 	def do_tentry(self, te):
+		'''
+			A thread can receive a compound operation or a simple
+			operation. A compound operation is an operation on a range of
+			memory specified by the starting address of the range, the size
+			of the range and the type of operation. The types can be
+			read, write, movnti or clflush.
+			
+			A simple operation is an operation on a 8-byte or 64-bit range.
+			Mulitple consecutive simple operations form a compound operation.
+		'''
 		assert te.is_valid() is True
 		
 		ret = None
@@ -27,7 +43,7 @@ class smt:
 		if self.ep is None: 
 			if te.is_write():
 				# The beginning of a new epoch
-				self.ep = epoch(self.tid, te.get_time())
+				self.ep = epoch(self.tid, te.get_time(), self.usrargs)
 				self.ep_ops = self.ep.get_ep_ops()
 				
 				r = self.ep_ops[te_type](te)
@@ -38,7 +54,7 @@ class smt:
 				
 			elif te.is_fence():
 				# Null epoch
-				self.ep = epoch(self.tid, te.get_time())
+				self.ep = epoch(self.tid, te.get_time(), self.usrargs)
 				self.ep_ops = self.ep.get_ep_ops()
 				self.ep.end_epoch(te)
 				ret = self.ep
