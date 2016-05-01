@@ -20,20 +20,25 @@ class epoch:
 	BOFF  = 0x7
 	POFF  = 0x0fff
 	
-	def __init__(self, tid, time, usrargs):
+	def __init__(self, epargs, tidargs, usrargs):
+
 		self.rd_set = {}
 		self.cwrt_set = {}
 		self.nwrt_set = {}
 		self.page_set = {}
 		self.wrt_l = []
 		self.page_span = 0
-		self.usrargs = usrargs
-		if int(self.usrargs.reuse) >= 1:
-			self.reuse = True
-		else:
-			self.reuse = False
-		self.tid = tid
-		self.start_time = time
+		
+		self.eid = epargs[0]
+		self.most_recent_dep = 0
+		self.dep_track = int(usrargs.reuse)
+
+		# Not having type-safety is a boon
+		self.tid = tidargs[0]
+		self.log = tidargs[1]
+		self.tl_cwrt_set = tidargs[2]
+
+		self.start_time = epargs[1]
 		self.end_time   = 0.0
 		self.etype = 'null'
 		self.size = 0
@@ -58,6 +63,7 @@ class epoch:
 		return [self.tid, self.end_time, self.etype, esize, wsize, cwsize, self.start_time]
 
 	def reset(self):
+		# Obsolete, do not use
 		self.rd_set.clear()
 		self.cwrt_set.clear()
 		self.nwrt_set.clear()
@@ -123,7 +129,13 @@ class epoch:
 		for i in range(0, n_cl):
 			cl = cacheline(s_cl + i*self.CSIZE)
 			# Put cl in a list here for WaW calculation
-			if self.reuse is True:
+			'''
+				Up until this layer of implementation of the epoch abstraction,
+				we have enough information to log all store accesses made
+				by the epoch. But if we want to track dependency, we have 
+				to track ownership and for that we need to go one layer down !
+			'''
+			if self.log is not None:
 				self.wrt_l.append(cl.get_addr())
 			self.cwrite_cacheline(cl)
 
@@ -221,9 +233,9 @@ class epoch:
 				# print "5) 8 b, sa_b=", hex(__s_bi), " b_idx=", b_idx
 				# print n_bi, hex(s_cl)
 				cl = cacheline(s_cl)
-				# Put cl in a list for WaW distance calculation
+				# TODO : Put cl in a list for WaW distance calculation
 				# But be careful about multiple writes to the same CL
-				# That can alter the WaW drastically
+				# That can alter the WaW drastically.
 				self.nwrite_cacheline(cl, b_idx)
 
 			if((e_addr + 1) & self.BOFF != 0):
@@ -236,6 +248,37 @@ class epoch:
 		
 	def do_nothing(self, te):
 		return 0
+	
+	def get_age(self):
+		if self.most_recent_dep == 0:
+			return 0
+			
+		assert self.eid > self.most_recent_dep
+		return self.eid - self.most_recent_dep
+		
+	def check_dep(self, owner, __addr):
+		
+		if owner is False:
+			if self.dep_track == 2:
+				if __addr in self.tl_cwrt_set:
+					last_dep = self.tl_cwrt_set[__addr]
+					''' 
+						If the curr epoch is not the owner
+						of the cl, make sure the id of the last epoch
+						that was the owner is LESS than the id of curr
+						epoch.
+						This gives rise to the notion of dependent epochs
+						and independent epochs, which may be rare
+					'''
+					assert last_dep  < self.eid
+					if last_dep > self.most_recent_dep:
+						self.most_recent_dep = last_dep
+
+				self.tl_cwrt_set[__addr] = self.eid
+				# look for thread-local ownership
+			# elif self.dep_track == 3:
+				# look for global ownership
+
 		
 	def read_cacheline(self, cl):
 		assert self.etype in self.epoch_types
@@ -263,6 +306,7 @@ class epoch:
 	def cwrite_cacheline(self, cl):
 		assert self.etype in self.epoch_types
 
+		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
 
@@ -272,10 +316,12 @@ class epoch:
 			assert (__addr not in self.rd_set)
 		
 		if __addr in self.nwrt_set:
+			owner = True
 			self.nwrt_set.pop(__addr)
 			assert (__addr not in self.nwrt_set)
 
 		if __addr not in self.cwrt_set:
+			self.check_dep(owner, __addr)
 			self.cwrt_set[__addr] = cl
 
 		self.cwrt_set[__addr].dirty_all()
@@ -290,6 +336,7 @@ class epoch:
 		assert b_idx > -1 and b_idx < 8
 		assert self.etype in self.epoch_types
 		
+		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
 
@@ -299,10 +346,12 @@ class epoch:
 			assert (__addr not in self.rd_set)
 		
 		if __addr in self.cwrt_set:
+			owner = True
 			self.cwrt_set.pop(__addr)
 			assert (__addr not in self.cwrt_set)
 
 		if __addr not in self.nwrt_set:
+			self.check_dep(owner, __addr)
 			self.nwrt_set[__addr] = cl
 			if len(self.nwrt_set) > 512:
 				assert False
@@ -348,15 +397,20 @@ class epoch:
 		# Do all stat collection in the destructor routine, you have
 		# my permission to do it. But don't touch the core of the epoch
 		# code.
-		if self.reuse is True and self.get_cwrt_set_sz() > 0:
-			tfile = self.usrargs.tfile
-			op = open("/dev/shm/." + str(os.path.basename(tfile.split('.')[0])) \
-					+ '-' + str(self.tid) + '.e', 'a')	
-			op.write("beginning_of_epoch " + str(self.get_cwrt_set_sz()) + " \n")
+		if self.get_cwrt_set_sz() > 0 and self.log is not None:
+			# If you are going to include non-temporal stores as well,
+			# change the if condition to check for non-empty nwrt_set 
+			first_entry = True
 			for addr in self.wrt_l:
-				op.write(str(hex(addr)) + '\n');
-			op.write("end_of_epoch\n")
-			op.close()
+				
+				if first_entry is True:
+					first_entry = False
+				else:
+					self.log.write(',')
+					
+				self.log.write(str(hex(addr)));
+				
+			self.log.write(';');
 		
 #		self.size = self.get_size()
 #		cwrt_set = self.cwrt_set

@@ -1,20 +1,49 @@
 from epoch import epoch
 from tentry import tentry
-import os
+import os,csv,gzip
+from ep_stats import ep_stats
+
 
 class smt:
-	def __init__(self, tid, time, usrargs):
+	def __init__(self, tid, usrargs, sysargs):
 		self.tid = tid
-		self.usrargs = usrargs
-		self.flow = usrargs.flow
 		self.ep = None #epoch(0, 0.0)
 		self.ep_ops = None #self.ep.get_ep_ops()
+		self.true_ep_count = 0 # Count of true epochs
+		self.null_ep_count = 0 # Count of null epochs
+		self.cwrt_set = {}
 		self.call_chain = []
+
+		self.ppid = sysargs[0]		
+
+		self.usrargs = usrargs
+		self.flow = self.usrargs.flow
+		self.tfile = self.usrargs.tfile
+		
 		# Clear away any previous epochs you may have recorded
-		tfile = self.usrargs.tfile
-		op = open("/dev/shm/." + str(os.path.basename(tfile.split('.')[0])) \
-					+ '-' + str(self.tid) + '.e', 'w')		
-		op.close()
+		# We are maitaining per-thread logs of all NVM writes
+		'''
+		self.csvlog = open("/dev/shm/" + str(os.path.basename(self.tfile.split('.')[0])) \
+					+ '-' + str(self.tid) + '.csv', 'w')
+
+		# self.csvlog = gzip.open("/dev/shm/" + str(os.path.basename(self.tfile.split('.')[0])) \
+		#			+ '-' + str(self.tid) + '.csv.gz', 'wb')
+					
+		self.log = csv.writer(self.csvlog)		
+		'''
+		if self.usrargs.reuse > 0: #1,2,3
+			try :
+				self.log = open("/dev/shm/" + str(os.path.basename(self.tfile.split('.')[0])) \
+					+ '-' + str(self.tid) + '.txt', 'w')
+			except:
+				# When there are too many open files, open() files
+				self.log = None
+		else:
+			self.log = None
+			
+		self.est = ep_stats()
+
+		
 	def sanity(self, sa, sz, r):
 			return
 			sa = int(sa, 16)
@@ -24,6 +53,18 @@ class smt:
 				print hex(ecl), hex(r)
 			assert ecl == r
 
+	def log_start_entry(self):
+		if self.log is not None:
+			self.log.write('{')
+			
+	def log_end_entry(self):
+		if self.log is not None:
+			self.log.write('}\n')
+		
+	def log_insert_entry(self, lentry):
+		if self.log is not None:
+			self.log.write(str(lentry) + ';')
+	
 	def do_tentry(self, te):
 		'''
 			A thread can receive a compound operation or a simple
@@ -39,11 +80,20 @@ class smt:
 		
 		ret = None
 		te_type = te.get_type()
+		log = self.log
+		est = self.est
 		
 		if self.ep is None: 
 			if te.is_write():
 				# The beginning of a new epoch
-				self.ep = epoch(self.tid, te.get_time(), self.usrargs)
+				self.log_start_entry()
+
+				# No epoch number should start from 0
+				self.true_ep_count += 1
+				self.ep = epoch([self.true_ep_count, te.get_time()], \
+								[self.tid, self.log, self.cwrt_set], \
+								self.usrargs) 
+								#self.tid, te.get_time(), log)
 				self.ep_ops = self.ep.get_ep_ops()
 				
 				r = self.ep_ops[te_type](te)
@@ -54,12 +104,21 @@ class smt:
 				
 			elif te.is_fence():
 				# Null epoch
-				self.ep = epoch(self.tid, te.get_time(), self.usrargs)
+				# No epoch number should start from 0
+				self.null_ep_count += 1
+				self.ep = epoch([self.null_ep_count, te.get_time()], \
+								[self.tid, self.log, self.cwrt_set], \
+								self.usrargs) 
 				self.ep_ops = self.ep.get_ep_ops()
 				self.ep.end_epoch(te)
+
 				ret = self.ep
 				self.ep = None
 				self.ep_ops = None
+
+				# self.log_start_entry()
+				# self.log_insert_entry(est.get_str(ret))
+				# self.log_end_entry()
 		else: 
 			# True epoch
 			if te.is_fence():
@@ -68,7 +127,12 @@ class smt:
 				ret = self.ep
 				self.ep = None
 				self.ep_ops = None
+
+				self.log_insert_entry(est.get_str(ret))
+				self.log_end_entry()
+
 			else:
+					
 				r = self.ep_ops[te_type](te)
 				if(te.get_size() > 0):
 					self.sanity(te.get_addr(), te.get_size(), r)
@@ -157,5 +221,8 @@ class smt:
 		
 	def get_tid(self):
 		return self.tid
+		
+	def close_thread(self):
+		self.log.close()
 				
 			

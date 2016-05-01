@@ -117,6 +117,12 @@ class tentry:
 	
 		return l
 		
+	def get_tuple(self):
+		return (str(self.addr), str(self.size))
+
+	def get_str(self):
+		return str(self.addr) + ',' + str(self.size)
+
 	def need_arg(self):
 		if self.te_type not in self.delims:
 			return True

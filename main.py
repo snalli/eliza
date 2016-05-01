@@ -135,7 +135,7 @@ def digest(usrargs, sysargs):
 			if te.get_tid() != tid:
 				tid = te.get_tid()
 				if tid not in m_threads:
-					m_threads[tid] = smt(tid, te.get_time(), usrargs)
+					m_threads[tid] = smt(tid, usrargs, [pid])
 				
 				curr = m_threads[tid]			
 
@@ -192,8 +192,8 @@ def digest(usrargs, sysargs):
 		myq.flush()
 		t_buf = []
 		t_buf_len = 0
-		
-	if reuse >= 1:
+	'''
+	if reuse > 0:
 		# For each guest thread context
 		for gtid,ctxt in m_threads.items():
 			m_reuse[gtid] = Process(target=ping_pong, args=(usrargs, [gtid]))
@@ -202,6 +202,10 @@ def digest(usrargs, sysargs):
 		for gtid,reuse_worker in m_reuse.items():
 			print "- Worker " + str(pid) + " waiting for reuse worker " + str(gtid)
 			m_reuse[gtid].join()
+	elif reuse > 1:
+		for gtid in m_threads.keys():
+			# get the epoch summaries and put them in .q file for analyze.py to process
+	'''
 
 if __name__ == '__main__':
 		

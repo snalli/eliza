@@ -15,10 +15,13 @@ class ep_stats:
 	
 	def get_tuple(self, ep):
 
+		# Obsolete, use get_str()
+		# Or update to use
+
 		etype = ep.get_epoch_type()
 		if ep.is_null() is True:
 			self.tnull += 1
-			
+
 		cwsize = ep.get_cwrt_set_sz()
 		wsize  = float(cwsize) + ep.get_nwrt_set_sz()
 		esize  = wsize + float(ep.get_rd_set_sz())
@@ -33,5 +36,27 @@ class ep_stats:
 		
 		return t
 		
+	def get_str(self, ep):
+
+		etype = ep.get_epoch_type()
+		if ep.is_null() is True:
+			self.tnull += 1
+			
+		cwsize = ep.get_cwrt_set_sz()
+		wsize  = float(cwsize) + ep.get_nwrt_set_sz()
+		esize  = wsize + float(ep.get_rd_set_sz())
+		stime = ep.get_start_time()
+		etime = ep.get_end_time()
+		tid = ep.get_tid()
+		r1 = ep.get_page_span()
+		r2 = ep.get_age()
+		r3 = r4 = 0.0
 		
+		return  str(etype) + ',' + str(cwsize) + ','  + str(r2)
+
+
+		#return  str(etype) + ',' + str(esize) + ','  + str(wsize) + ','  \
+		#		+ str(cwsize) + ','  + str(r1) + ',' + str(r2) + ',' \
+		#		+ str(etime-stime)
+
 		
