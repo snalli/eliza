@@ -22,6 +22,7 @@ class epoch:
 	
 	def __init__(self, epargs, tidargs, usrargs):
 
+		self.prev_wrt_addr = -1
 		self.rd_set = {}
 		self.cwrt_set = {}
 		self.nwrt_set = {}
@@ -31,6 +32,7 @@ class epoch:
 		
 		self.eid = epargs[0]
 		self.most_recent_dep = 0
+		self.least_recent_dep = self.eid
 		self.dep_track = int(usrargs.reuse)
 
 		# Not having type-safety is a boon
@@ -101,6 +103,8 @@ class epoch:
 		e_cl = e_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
 		return e_cl
 
+	''' Stage 1 '''
+
 	def read(self, te):
 		addr = te.get_addr()
 		size = te.get_size()
@@ -126,6 +130,11 @@ class epoch:
 		
 		n_cl = self.get_n_cl(s_addr, size)
 		s_cl = s_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
+		'''
+			This coding here is superb !
+			It takes care of writes that are un-aligned
+			with cacheline boundary.
+		'''
 		for i in range(0, n_cl):
 			cl = cacheline(s_cl + i*self.CSIZE)
 			# Put cl in a list here for WaW calculation
@@ -135,12 +144,10 @@ class epoch:
 				by the epoch. But if we want to track dependency, we have 
 				to track ownership and for that we need to go one layer down !
 			'''
-			if self.log is not None:
-				self.wrt_l.append(cl.get_addr())
 			self.cwrite_cacheline(cl)
 
 		return s_cl + i*self.CSIZE
-		
+
 	def clflush(self, te):
 		addr = te.get_addr()
 		size = te.get_size()
@@ -175,7 +182,9 @@ class epoch:
 			cl = cacheline(s_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 			self.cwrite_cacheline(cl)
 			
+			''' The write can be across cache-line boundaries '''
 			e_addr = s_addr + size - 1
+
 			#print "1)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
 			cl = cacheline(e_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 			self.cwrite_cacheline(cl)
@@ -192,8 +201,10 @@ class epoch:
 			else:
 				cl = cacheline(s_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 				self.cwrite_cacheline(cl)
-				
+
+				''' The write can be across cache-line boundaries '''
 				e_addr = s_addr + size - 1
+
 				# print "3)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
 				cl = cacheline(e_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 				self.cwrite_cacheline(cl)
@@ -248,18 +259,66 @@ class epoch:
 		
 	def do_nothing(self, te):
 		return 0
+
+	''' Stage 2 '''
+	def logger(self, cl_addr):
+		''' 
+			We don't write to the log here since writing to an
+			external file on every access is slower than buffering it
+			in memory and writing back in batches later.
+			
+			But we still do check to see if the logfile handler is non-null,
+			to decide if we want to cache the order of addresses accessed
+			by the epoch.
+			
+			The write requests are completed in two stages. In the first stage,
+			the write requests is converted into a list of one or more 
+			cache-aligned addresses. These addresses are then issued one by one
+			to the second stage that checks for ownership and dependencies with
+			previous epochs. The stage two is unaware of whether the request to
+			access an cl-addr was internal or external.
+		'''
+		if self.log is not None:
+			if cl_addr != self.prev_wrt_addr:
+				self.prev_wrt_addr = cl_addr
+				self.wrt_l.append(self.prev_wrt_addr)
+			# else you can count how many times was the same address written
+			# to. but beware, the count can be a side-effect of your
+			# instrumentation or measurement
+
 	
-	def get_age(self):
+	def get_dist_from_mrd(self):
+		'''
+			This "if" checks if an epoch has had any 
+			dependencies. If none, return 0 indicating
+			this is self-dependent or an independent epoch.
+			Ignore all 0s when analyzing.
+		'''
 		if self.most_recent_dep == 0:
 			return 0
 			
 		assert self.eid > self.most_recent_dep
 		return self.eid - self.most_recent_dep
+	
+	def get_dist_from_lrd(self):
+		'''
+			This "if" checks if an epoch has had any 
+			dependencies. If none, return 0 indicating
+			this is self-dependent or an independent epoch.
+			Ignore all 0s when analyzing.
+		'''
+		if self.least_recent_dep == self.eid:
+			return 0
+			
+		assert self.eid > self.least_recent_dep
+		return self.eid - self.least_recent_dep
 		
 	def check_dep(self, owner, __addr):
 		
 		if owner is False:
-			if self.dep_track == 2:
+			# Make this configurable in case you do not want to track deps
+			if True is True:
+			# if self.dep_track == 2:
 				if __addr in self.tl_cwrt_set:
 					last_dep = self.tl_cwrt_set[__addr]
 					''' 
@@ -273,6 +332,8 @@ class epoch:
 					assert last_dep  < self.eid
 					if last_dep > self.most_recent_dep:
 						self.most_recent_dep = last_dep
+					if last_dep < self.least_recent_dep:
+						self.least_recent_dep = last_dep
 
 				self.tl_cwrt_set[__addr] = self.eid
 				# look for thread-local ownership
@@ -309,7 +370,8 @@ class epoch:
 		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
-
+		self.logger(cl.get_addr())
+		
 		# Refer to state diagram
 		if __addr in self.rd_set:
 			self.rd_set.pop(__addr)
@@ -339,7 +401,8 @@ class epoch:
 		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
-
+		self.logger(cl.get_addr())
+		
 		# Refer to state diagram
 		if __addr in self.rd_set:
 			self.rd_set.pop(__addr)
@@ -397,9 +460,10 @@ class epoch:
 		# Do all stat collection in the destructor routine, you have
 		# my permission to do it. But don't touch the core of the epoch
 		# code.
-		if self.get_cwrt_set_sz() > 0 and self.log is not None:
+		if self.etype == 'true' and self.log is not None:
 			# If you are going to include non-temporal stores as well,
 			# change the if condition to check for non-empty nwrt_set 
+			# PS : It suffices to check if the epoch is true or null
 			first_entry = True
 			for addr in self.wrt_l:
 				

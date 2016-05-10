@@ -74,6 +74,7 @@ def digest(usrargs, sysargs):
 	myq = open(sysargs[4], 'w')
 	printl = sysargs[5] # List of host tids you want to examine, for internal use only
 	csvq = csv.writer(myq)
+	logdir = sysargs[6]
 
 	if pt > 0:
 		op = open("/dev/shm/" + str(os.path.basename(tfile).split('.')[0]) + '_' + str(pid) + '.t', 'w')	
@@ -135,7 +136,7 @@ def digest(usrargs, sysargs):
 			if te.get_tid() != tid:
 				tid = te.get_tid()
 				if tid not in m_threads:
-					m_threads[tid] = smt(tid, usrargs, [pid])
+					m_threads[tid] = smt(tid, usrargs, sysargs)
 				
 				curr = m_threads[tid]			
 
@@ -146,6 +147,7 @@ def digest(usrargs, sysargs):
 			# curr.update_call_chain(caller, callee)
 		
 			ep = curr.do_tentry(te)
+			
 
 			if ep is not None:
 				if pt > 2: # pt = 3
@@ -192,6 +194,11 @@ def digest(usrargs, sysargs):
 		myq.flush()
 		t_buf = []
 		t_buf_len = 0
+
+	myq.close()
+	if reuse > 0:
+		for gtid,ctxt in m_threads.items():
+			ctxt.close_thread()
 	'''
 	if reuse > 0:
 		# For each guest thread context
@@ -222,15 +229,18 @@ if __name__ == '__main__':
 		pmap = {}
 		shmmap = {}
 		qs = {}
+		logdir = '/dev/shm/' + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
+		os.mkdir(logdir)
 
 		print "Calculating number of trace entries... please wait"
 		cmd = "zcat " + str(args.tfile) + " | wc -l"
 		print "$", cmd
 		os.system(cmd)
 
-		for pid in range(0, w):
-			qs[pid] = '/dev/shm/.' + str(os.path.basename(args.tfile.split('.')[0])) + '_' + str(pid) + '.q'
-			pmap[pid] = Process(target=digest, args=(args, [pid, [], 1000000, w, qs[pid], [-1]]))
+		for wpid in range(0, w):
+			pid = wpid # This worker's id
+			qs[pid] = '/dev/shm/' + str(os.path.basename(args.tfile.split('.')[0])) + '_' + str(pid) + '.q'
+			pmap[pid] = Process(target=digest, args=(args, [pid, [], 1000000, w, qs[pid], [-1], logdir]))
 			pmap[pid].start()
 			print "Parent started worker ", pid
 		
@@ -238,10 +248,18 @@ if __name__ == '__main__':
 			print "Parent waiting for worker", pid
 			p.join()
 		
-		''' Analysis routines '''
+		of = logdir + '/' + str(os.path.basename(args.tfile.split('.')[0])) + '.csv'
+		for pid,p in pmap.items():
+			cmd = 'cat ' + str(qs[pid]) + ' >> ' + str(of) + ';rm -f ' + str(qs[pid])
+			os.system(cmd)
+
+		''' 
+			Obsolete : Analysis routines - Analysis is now performed separately
+			off the pipeline, using config files with .ini format.
+		'''
 		if args.anlz is True:
 			cmd = 'mypy analyze.py -f ' + str(args.tfile) + ' -w' + str(w)
-			os.system(cmd)
+			# os.system(cmd)
 		else:
 			print "No analysis performed"
 		

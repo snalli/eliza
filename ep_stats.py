@@ -29,7 +29,9 @@ class ep_stats:
 		etime = ep.get_end_time()
 		tid = ep.get_tid()
 		r1 = ep.get_page_span()
-		r2 = r3 = r4 = 0.0
+		r2 = ep.get_dist_from_mrd()
+		r3 = ep.get_dist_from_lrd()
+		r4 = 0.0
 		
 		t =  (etype, esize, wsize, cwsize,
 		        stime, etime, r1, r2, r3 ,r4, tid)
@@ -49,14 +51,25 @@ class ep_stats:
 		etime = ep.get_end_time()
 		tid = ep.get_tid()
 		r1 = ep.get_page_span()
-		r2 = ep.get_age()
-		r3 = r4 = 0.0
+		r2 = ep.get_dist_from_mrd()
+		r3 = ep.get_dist_from_lrd()
+		r4 = 0.0
 		
-		return  str(etype) + ',' + str(cwsize) + ','  + str(r2)
+		return  str(esize) + ','  + str(wsize) + ',' \
+				+ str(stime) + ',' + str(etime) + ',' \
+				+ str(r1) + ',' + str(r2) + ',' + str(r3) + ',' + str(r4) + ',' \
+
 
 
 		#return  str(etype) + ',' + str(esize) + ','  + str(wsize) + ','  \
 		#		+ str(cwsize) + ','  + str(r1) + ',' + str(r2) + ',' \
 		#		+ str(etime-stime)
+	
+	def get_stime_from_str(self, epstr):
+		assert epstr is not None
+		return float(epstr.split(',')[2])
 
+	def get_etime_from_str(self, epstr):
+		assert epstr is not None
+		return float(epstr.split(',')[3])
 		

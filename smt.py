@@ -14,7 +14,8 @@ class smt:
 		self.cwrt_set = {}
 		self.call_chain = []
 
-		self.ppid = sysargs[0]		
+		self.ppid = sysargs[0]
+		self.logdir = sysargs[6]
 
 		self.usrargs = usrargs
 		self.flow = self.usrargs.flow
@@ -32,11 +33,13 @@ class smt:
 		self.log = csv.writer(self.csvlog)		
 		'''
 		if self.usrargs.reuse > 0: #1,2,3
+			print self.logdir + '/' + str(os.path.basename(self.tfile.split('.')[0])) \
+				+ '-' + str(self.tid) + '.txt'
 			try :
-				self.log = open("/dev/shm/" + str(os.path.basename(self.tfile.split('.')[0])) \
+				self.log = open(self.logdir + '/' + str(os.path.basename(self.tfile.split('.')[0])) \
 					+ '-' + str(self.tid) + '.txt', 'w')
 			except:
-				# When there are too many open files, open() files
+				# When there are too many open files, open() fails
 				self.log = None
 		else:
 			self.log = None
@@ -55,7 +58,7 @@ class smt:
 
 	def log_start_entry(self):
 		if self.log is not None:
-			self.log.write('{')
+			self.log.write('{;')
 			
 	def log_end_entry(self):
 		if self.log is not None:
