@@ -314,11 +314,10 @@ class epoch:
 		return self.eid - self.least_recent_dep
 		
 	def check_dep(self, owner, __addr):
-		
+		return # TODO : remove, for final version
 		if owner is False:
 			# Make this configurable in case you do not want to track deps
-			if True is True:
-			# if self.dep_track == 2:
+			if self.dep_track == 2:
 				if __addr in self.tl_cwrt_set:
 					last_dep = self.tl_cwrt_set[__addr]
 					''' 
@@ -370,7 +369,7 @@ class epoch:
 		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
-		self.logger(cl.get_addr())
+		# self.logger(cl.get_addr())
 		
 		# Refer to state diagram
 		if __addr in self.rd_set:
@@ -401,7 +400,7 @@ class epoch:
 		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
-		self.logger(cl.get_addr())
+		# self.logger(cl.get_addr())
 		
 		# Refer to state diagram
 		if __addr in self.rd_set:
@@ -465,7 +464,8 @@ class epoch:
 			# change the if condition to check for non-empty nwrt_set 
 			# PS : It suffices to check if the epoch is true or null
 			first_entry = True
-			for addr in self.wrt_l:
+			# It is not enuf just to check prev_addr ! Consider aaabbcca --> (a,b,c,a)!
+			for addr in self.merge_sets(self.cwrt_set, self.nwrt_set):#set(self.wrt_l): # You can merge the two write sets here ?!
 				
 				if first_entry is True:
 					first_entry = False
