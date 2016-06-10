@@ -10,6 +10,7 @@ class utread:
 	def __init__(self, usrargs, sysargs):
 		self.pid = sysargs[0]
 		self.n = sysargs[3]
+		self.lno = 0
 		
 		self.nti = usrargs.nti
 		self.clf = usrargs.clf
@@ -31,10 +32,11 @@ class utread:
 		of seconds in since epoch - Jan 1, 1970. Wth ?
 		We only need relative times and not absolute ones.
 		'''
-		self.epoch = 0.00000
+		self.prev_t = 0
 		return None
 	
 	def get_tentry(self, tl):
+		self.lno += 1
 		assert tl is not None
 		te = tentry()
 		
@@ -75,28 +77,43 @@ class utread:
 		# Change here to accomodate user mode traces
 		# Add a filter for Mnemosyne
 		l = tl.split(':')
-		te.set_tid(int(l[0]))
-		
-		# Rule for workers to decide whether to proceed or not
-		if te.get_tid() % self.n != self.pid:
-			del te
-			return None
-			
-		if self.epoch == 0.0:
-			self.epoch = round(float(l[1]),6)
-		te.set_time(round((float(l[1]) - self.epoch),6))
-		te.set_callee('null')
-			
-		if te.need_arg():
-			if self.psegment_start <= int(l[3],16) and \
-				int(l[3],16) <= self.psegment_end:
-				te.set_addr(l[3])
-				te.set_size(int(l[4]))
-			else:
+		if True is True:
+			te.set_tid(int(l[0]))
+			# Rule for workers to decide whether to proceed or not
+			if te.get_tid() % self.n != self.pid:
 				del te
 				return None
-		#else:
-		#	te.set_callee(l[4])
-			# te.set_caller(l[5].split('-')[1])
+
+			te_time = int(l[1])
+			if te_time >= self.prev_t:
+				self.prev_t = te_time
+			else:
+				print "TIME CHECK FAIL", self.lno, te.te_type, te.get_tid(), te_time, self.prev_t
+				
+			te.set_time(te_time)
+			te.set_callee('null')
+			
+			if te.need_arg():
+				# Check for M, very crucial !
+				if self.psegment_start <= int(l[3],16) and \
+					int(l[3],16) <= self.psegment_end:
+					te.set_addr(l[3])
+					te.set_size(int(l[4]))
 					
-		return te
+					if te.is_movnti() is True:
+						te.set_caller(l[6])
+						te.set_pc(int(l[7]))
+					else:
+						te.set_caller(l[5])
+						te.set_pc(int(l[6]))
+
+				else:
+					del te
+					return None
+			#else:
+				#te.set_callee(l[4])
+				# te.set_caller(l[5].split('-')[1])
+					
+			return te
+		else:
+			return None

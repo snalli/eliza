@@ -22,24 +22,29 @@ class epoch:
 	
 	def __init__(self, epargs, tidargs, usrargs):
 
+		# Original members
 		self.prev_wrt_addr = -1
 		self.rd_set = {}
 		self.cwrt_set = {}
 		self.nwrt_set = {}
 		self.page_set = {}
-		self.wrt_l = []
+
+		# Intra thread dep stuff
+		self.wrt_l = [] # TODO Redundant ?
 		self.page_span = 0
-		
 		self.eid = epargs[0]
 		self.most_recent_dep = 0
 		self.least_recent_dep = self.eid
 		self.dep_track = int(usrargs.reuse)
-
 		# Not having type-safety is a boon
-		self.tid = tidargs[0]
 		self.log = tidargs[1]
 		self.tl_cwrt_set = tidargs[2]
 
+		#Inter thread dep stuff
+		self.epaddr2pc = {}
+		self.writer = 'none'
+		
+		self.tid = tidargs[0]
 		self.start_time = epargs[1]
 		self.end_time   = 0.0
 		self.etype = 'null'
@@ -123,7 +128,8 @@ class epoch:
 	def cwrite(self, te):
 		addr = te.get_addr()
 		size = te.get_size()
-
+		self.writer = te.get_caller() + '/' + str(te.get_pc())
+		
 		s_addr = int(addr, 16)
 		assert size > 0
 		assert s_addr > 0
@@ -146,12 +152,13 @@ class epoch:
 			'''
 			self.cwrite_cacheline(cl)
 
+		self.writer = 'none'
 		return s_cl + i*self.CSIZE
 
 	def clflush(self, te):
 		addr = te.get_addr()
 		size = te.get_size()
-
+		
 		s_addr = int(addr, 16)
 		assert size > 0
 		assert s_addr > 0
@@ -161,7 +168,8 @@ class epoch:
 		addr = te.get_addr()
 		size = te.get_size()
 		s_addr = int(addr, 16)
-
+		self.writer = te.get_caller() + '/' + str(te.get_pc())
+		
 		assert size > 0
 		assert s_addr > 0
 		
@@ -189,6 +197,7 @@ class epoch:
 			cl = cacheline(e_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 			self.cwrite_cacheline(cl)
 
+			self.writer = 'none'
 			return e_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
 		elif size == self.BSIZE:
 			if (s_addr & self.BOFF == 0):
@@ -197,6 +206,7 @@ class epoch:
 				self.nwrite_cacheline(cl, b_idx)
 				#print "2)", size, "b sa/ea=", hex(s_addr & ~self.CMASK), " b_idx=", b_idx
 				
+				self.writer = 'none'
 				return s_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
 			else:
 				cl = cacheline(s_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
@@ -208,7 +218,8 @@ class epoch:
 				# print "3)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
 				cl = cacheline(e_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 				self.cwrite_cacheline(cl)
-					
+
+				self.writer = 'none'					
 				return e_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
 		elif size > self.BSIZE:
 
@@ -254,6 +265,7 @@ class epoch:
 				# print "4.1)", e_cbytes, "b sa=", hex(e_addr & ~self.CMASK)		
 				self.cwrite_cacheline(cl)
 				
+			self.writer = 'none'
 			return e_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
 
 		
@@ -314,7 +326,8 @@ class epoch:
 		return self.eid - self.least_recent_dep
 		
 	def check_dep(self, owner, __addr):
-		return # TODO : remove, for final version
+		# Check for intra-thread epoch deps
+		
 		if owner is False:
 			# Make this configurable in case you do not want to track deps
 			if self.dep_track == 2:
@@ -382,10 +395,11 @@ class epoch:
 			assert (__addr not in self.nwrt_set)
 
 		if __addr not in self.cwrt_set:
-			self.check_dep(owner, __addr)
+			# self.check_dep(owner, __addr)
 			self.cwrt_set[__addr] = cl
 
 		self.cwrt_set[__addr].dirty_all()
+		self.epaddr2pc[__addr] = str(self.writer) # Last writer wins
 		
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
 			self.etype = 'true'
@@ -413,13 +427,14 @@ class epoch:
 			assert (__addr not in self.cwrt_set)
 
 		if __addr not in self.nwrt_set:
-			self.check_dep(owner, __addr)
+			# self.check_dep(owner, __addr)
 			self.nwrt_set[__addr] = cl
 			if len(self.nwrt_set) > 512:
 				assert False
 		
 		self.nwrt_set[__addr].dirty(b_idx)
-		
+		self.epaddr2pc[__addr] = str(self.writer) # Last writer wins
+				
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
 			self.etype = 'true'
 
@@ -463,19 +478,27 @@ class epoch:
 			# If you are going to include non-temporal stores as well,
 			# change the if condition to check for non-empty nwrt_set 
 			# PS : It suffices to check if the epoch is true or null
+			tmp_l = sorted(list(self.merge_sets(self.cwrt_set, self.nwrt_set)))
 			first_entry = True
 			# It is not enuf just to check prev_addr ! Consider aaabbcca --> (a,b,c,a)!
-			for addr in self.merge_sets(self.cwrt_set, self.nwrt_set):#set(self.wrt_l): # You can merge the two write sets here ?!
-				
+			for addr in tmp_l:#set(self.wrt_l): # You can merge the two write sets here ?!
 				if first_entry is True:
 					first_entry = False
 				else:
 					self.log.write(',')
-					
 				self.log.write(str(hex(addr)));
-				
 			self.log.write(';');
-		
+
+			
+			first_entry = True
+			for addr in tmp_l:
+				if first_entry is True:
+					first_entry = False
+				else:
+					self.log.write(',')
+				self.log.write(self.epaddr2pc[addr]);
+			self.log.write(';');
+			
 #		self.size = self.get_size()
 #		cwrt_set = self.cwrt_set
 #		nwrt_set = self.nwrt_set

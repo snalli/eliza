@@ -232,10 +232,10 @@ if __name__ == '__main__':
 		logdir = '/dev/shm/' + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
 		os.mkdir(logdir)
 
-		print "Calculating number of trace entries... please wait"
-		cmd = "zcat " + str(args.tfile) + " | wc -l"
-		print "$", cmd
-		os.system(cmd)
+		#print "Calculating number of trace entries... please wait"
+		#cmd = "zcat " + str(args.tfile) + " | wc -l"
+		#print "$", cmd
+		#os.system(cmd)
 
 		for wpid in range(0, w):
 			pid = wpid # This worker's id

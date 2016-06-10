@@ -19,10 +19,11 @@ from os.path import isfile, join
 from multiprocessing import Pool, TimeoutError, Process, Queue, Lock
 from ep_stats import ep_stats
 
-debugl = [1,2,3,4]
+debugl = ['1','2','3','4']
 
 parser = argparse.ArgumentParser(prog="eliza", description="A tool to analyze epochs")
-parser.add_argument('-d', dest='debug', default = 0, help="Debug levels", choices=debugl)
+parser.add_argument('-d', dest='debug', default ='0', help="Debug levels", choices=debugl)
+parser.add_argument('-t', dest='time_intv', default = 5, help="Time interval to inspect")
 parser.add_argument('-r', dest='logdir', help="Log directory containing per-thread epoch logs")
 parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1', help="Display version and quit")
 
@@ -34,10 +35,31 @@ except:
 wpid = -1 # Worker pid
 est = None
 lookback_time = 0.000001 # 1 us
-#lookback_time = 0.000005 # 5 us
+lookback_time = 0.000005 # 5 us
+lookback_time = 0.00001  # 10 us
+lookback_time = 0.000015 # 15 us
+lookback_time = 0.00002  # 20 us
+lookback_time = 0.000025 # 25 us
+lookback_time = 0.00003  # 30 us
+lookback_time = 0.000035 # 35 us
+lookback_time = 0.000040 # 40 us
+lookback_time = 0.000045 # 45 us
 lookback_time = 0.00005  # 50 us
-#lookback_time = 0.0005   # 500 us
-#lookback_time = 0.005    # 5000 us
+lookback_time = 0.000010 # 5 us
+lookback_time = 0.00005  # 50 us
+lookback_time = 0.0005   # 500 us
+lookback_time = 0.005    # 5000 us
+lookback_time = 0.01     # 10000 us
+lookback_time = 0.02     # 20000 us
+lookback_time = 0.05     # 50000 us
+lookback_time = 0.5      # 500000 us
+lookback_time = int(args.time_intv) # or you could do times 1,000,000
+debug = int(args.debug)
+print "*************************************"
+print "Calculating thread dependencies"
+print "Look back time = ", lookback_time, " microsec"
+print "Debug level    = ", debug
+print "*************************************"
 # Keep the two separate so that you can collectively read in lines later
 # if the files are too big
 f_to_epochs_stime_m = {}
@@ -51,7 +73,7 @@ def make_index_by_etime(logdir, f):
 		for lno,l in enumerate(fp):
 			try:
 				# this may fail due to out-range index, hence "try"
-				epstr = l.split(';')[2]
+				epstr = l.split(';')[3]
 				stime = est.get_stime_from_str(epstr)
 				etime = est.get_etime_from_str(epstr)
 				f2e.append((etime, lno+1))
@@ -67,7 +89,7 @@ def make_index_by_stime(logdir, f):
 		for lno,l in enumerate(fp):
 			try:
 				# this may fail due to out-range index, hence "try"
-				epstr = l.split(';')[2]
+				epstr = l.split(';')[3]
 				stime = est.get_stime_from_str(epstr)
 				etime = est.get_etime_from_str(epstr)
 				f2e.append((stime, lno+1))
@@ -94,17 +116,28 @@ def make_lnmap(logdir, f):
 		for lno,l in enumerate(fp): # 0 to n - 1
 			try:
 				tmpl = []
-				tmpl.append(l.split(';')[1].split(','))
+				l_addr = l.split(';')[1].split(',')
+				tmpl.append(l_addr)
 
-				epstr = l.split(';')[2]
+				epstr = l.split(';')[3]
 				stime = est.get_stime_from_str(epstr)
 				etime = est.get_etime_from_str(epstr)
 				tmpl.append((stime,etime))		
-			
+
+				writers = l.split(';')[2].split(',')
+				tmpl.append(writers)
+				
+				assert len(l_addr) == len(writers)
+				# There can only be as many writers as there are addresses
+				# since for each address we record the last writer !
 				lno_to_lines_m[lno+1] = tmpl
 			except:
 				continue
 	fp.close()
+	'''
+		The structure here is ass follows :
+		f -> lno_to_lines_map -> line num -> [[list of NVM addrs] <0>, (tuple of time stamps)<1>, [list of writers]<2>]
+	'''
 	f_to_lnnums_m[f] = lno_to_lines_m
 	
 def find_recent_past_ep_stime_helper(f, stime_, stime):
@@ -156,8 +189,8 @@ def find_recent_past_ep(f, stime_, stime):
 	s2 = set(range(sno_et, eno_et + 1))
 	s3 = s1.intersection(s2)
 	if len(s3) > 0:
-		sno = max(sno_st, sno_et)
-		eno = min(eno_st, eno_et)
+		sno = max(sno_st, sno_et) # sno_st >= sno_et; An epoch in a thread cannot start before the previous one ends
+		eno = min(eno_st, eno_et) # eno_st >= eno_et; For the same reason above
 		assert sno in s3
 		assert eno in s3
 		return (sno,eno)
@@ -168,13 +201,19 @@ def cal_cross_thd_dep(pid, args):
 
 	logdir = args[0]
 	logfile = args[1]
+	debug = int(args[2])
 	recently_touched_addr = {}
 	global wpid
 	global est
 	global lookback_time
 	global f_to_lnnums_m
 	global f_to_epochs_m
+	global datadir
+	n_cross = 0
+	n_self = 0
 	wpid = pid
+	cross_dep_addrs = set()
+	cross_thread_deps_short = {}
 	#if wpid != 2:
 	#	sys.exit(0)
 	est = ep_stats()
@@ -188,19 +227,35 @@ def cal_cross_thd_dep(pid, args):
 		make_lnmap(logdir, f)
 
 	print "''' Core analysis begins here '''"
+	'''
+    Added feature to detect and report cross thread dependencies
+    on NVM addresses. It is a completely parallel algorithm.
+    
+    For each guest thread T, we iterate through all epochs in that thread.
+    - For each epoch E in T, we maintain a global cache C of all epochs that started and
+      ended between X and (X - t) secs in any guest thread.
+      ... X is that starting time of the epoch E under consideration
+          and t is configurable, preferably 50 usecs.
+    - Then for each NVM addr A in E, we search C to find the most recent
+      epoch E' that dirtied A. If E' is in T, it is a self-dependency else
+      it is a cross-thread dependency.
+
+	'''
 	with open(logdir + '/' + logfile, 'r') as fp:
-		fo = open("deps-" + logfile, 'w')
+		if debug > 0:
+			fo = open(datadir + "/deps-" + logfile, 'w')
 		for lno,l in enumerate(fp):
 			try:
 				ep_addr  = l.split(';')[1].split(',')
-				ep_summ  = l.split(';')[2] # this may fail due to out-range index
+				self_writers = l.split(';')[2].split(',')
+				assert len(ep_addr) == len(self_writers)
+				ep_summ  = l.split(';')[3] # this may fail due to out-range index
 				stime    = est.get_stime_from_str(ep_summ)
 				etime    = est.get_etime_from_str(ep_summ)
 			except:
 				continue
 
 			#print '>>>>',lno+1,stime - lookback_time, stime, ep_addr
-			''' find the most-recent-owner '''
 			for f in onlyfiles:
 
 				t = find_recent_past_ep(f, stime - lookback_time, stime)
@@ -223,41 +278,83 @@ def cal_cross_thd_dep(pid, args):
 					assert stime - lookback_time <= f_to_lnnums_m[f][eno][1][0] and f_to_lnnums_m[f][eno][1][1] <= stime	
 					
 					for ln in range(sno, eno + 1):
-						l_addr = f_to_lnnums_m[f][ln][0]
-						tmstmp = f_to_lnnums_m[f][ln][1]
-						for addr in l_addr:
+						l_addr  = f_to_lnnums_m[f][ln][0]
+						tmstmp  = f_to_lnnums_m[f][ln][1]
+						other_writers = f_to_lnnums_m[f][ln][2]
+						assert len(l_addr) == len(other_writers)
+						# tmstmp[0] Start time of an epoch
+						# tmstmp[1] End time of an epoch
+						for i in range(0, len(l_addr)):
+							addr = l_addr[i]
+							o_wrt = other_writers[i]
 							if addr not in recently_touched_addr:
-								recently_touched_addr[addr] = (tmstmp[0], tmstmp[1], f, ln)
+								recently_touched_addr[addr] = (tmstmp[0], tmstmp[1], f, ln, o_wrt)
 							else:
 								if (tmstmp[0], tmstmp[1], f, ln) > recently_touched_addr[addr]:
-									recently_touched_addr[addr] = (tmstmp[0], tmstmp[1], f, ln)
+									recently_touched_addr[addr] = (tmstmp[0], tmstmp[1], f, ln, o_wrt)
+								# This tuple comparison is the key for this entire algorithm to work
+								'''
+									A key assumption that makes this work is that epochs that race
+									for NVM addresses will be rare or non-existent, which means dependent epochs 
+									will not race and strictly have a happens before relationship 
+								'''
 			''' 
 				What we've done so far is form a list of NVM addresses
 				dirtied by all threads in the last 100 micro-seconds.
 				This list also identifies the last epoch to dirty the addr.
 			'''
 			
-			nprint = 0
+			nprint = {}
 			for ea in ep_addr:
+				nprint[ea] = 0
+				
+			cross_thread_deps = set()
+			self_thread_deps  = set()
+			for i in range(0, len(ep_addr)):
+				ea = ep_addr[i]
+				s_wrt = self_writers[i]
 				if ea in recently_touched_addr:
-					# Asserting that the starting time of last owning epoch is within (X - t) secs
+					# Asserting that the starting time of last owning epoch is within X & (X - t) secs - GOOD !
 					b0 = (stime - lookback_time <= recently_touched_addr[ea][0] and recently_touched_addr[ea][0] <= stime)
-					# Asserting that the ending time of last owning epoch is within (X - t) secs
+					# Asserting that the ending time of last owning epoch is within X & (X - t) secs - GOOD !
 					b1 = (stime - lookback_time <= recently_touched_addr[ea][1] and recently_touched_addr[ea][1] <= stime)
 					if not (b0 and b1):
 						continue
 						
+					if nprint[ea] == 0 and debug > 1:
+							# fo.write('>>>> ' + str(lno+1) + ' ' + str(stime - lookback_time) + ' ' + str(stime) + ' ' + str(ep_addr) + '\n')
+							nprint[ea] = 1
+
 					ownership = "deadbeef"
-					if logfile != recently_touched_addr[ea][2]:
+					f,ln,w = recently_touched_addr[ea][2], recently_touched_addr[ea][3], recently_touched_addr[ea][4]
+					if logfile != f:
 						ownership = "cross_thread"
+						if (f,ln,ea) not in cross_thread_deps:
+							cross_thread_deps.add((f,ln,ea))
+							if debug > 0:
+								#fo.write(str(ownership) + ' ' + str(ea) + ' ' + str(recently_touched_addr[ea]) + '\n')
+								fo.write(str(ea) + ' (' + str(s_wrt) + ',' + str(lno+1) + ') => ' + str(ea) + ' (' + str(w) + ',' + str(f) + ',' + str(ln) + ')\n')
+								tstr = str(s_wrt) + ' => ' + str(w) + '\n'
+								if tstr in cross_thread_deps_short:
+									cross_thread_deps_short[tstr] += 1
+								else:
+									cross_thread_deps_short[tstr] = 1
+							n_cross += 1
+							# cross_dep_addrs.add(ea)
+					'''
 					else:
 						ownership = "self_thread"
+						if (f,ln) not in self_thread_deps:
+							self_thread_deps.add((f,ln))
+							if debug > 0:
+								fo.write(str(ownership, ea, recently_touched_addr[ea]))
+							n_self += 1
+					'''
+
+						# fantastic code, excellent use of data structures
+						# excellent use of bisect algo, python tuple comparison features
+						# excellent use of python set, and type-indenpendence features !
 					
-					if nprint == 0:
-						print '>>>>',lno+1,stime - lookback_time, stime, ep_addr
-						nprint = 1
-						
-					print ownership, ea, recently_touched_addr[ea]
 			
 			'''
 				What we've done so far is to list self- and cross- thread
@@ -266,8 +363,16 @@ def cal_cross_thd_dep(pid, args):
 				recent owner epoch. Then we simply check this cache for the most
 				recent owner epoch in a different SMT context !
 			'''
+	if debug > 0:
+		fo.write("\n\n Summary of dependencies \n\n")
+		for k,v in cross_thread_deps_short.items():
+			fo.write(str(k) + ':' + str(v) + '\n')
+		fo.close()
+	# print logfile, "n_cross=", n_cross," n_self=", n_self
+	print logfile, "n_cross=", n_cross #, sorted(list(cross_dep_addrs))
 						
-datadir = '/dev/shm/'
+# datadir = '/dev/shm/'
+datadir = '/scratch/'
 colmap = {}
 colmap['etype'] = 0
 colmap['epoch_esize'] = 1
@@ -279,14 +384,14 @@ colmap['epoch_dist_from_mrd'] = 7
 colmap['epoch_dist_from_lrd'] = 8
 marker = ['ro-', 'bs-', 'g^-', 'kD-']
 plain  =   ['r-', 'b-', 'g-', 'k-']
-logdir = '/dev/shm/' + args.logdir
+logdir = datadir + args.logdir
 cfg = ConfigParser.ConfigParser()
 cfg.read('data.ini')
 
 onlyfiles = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.txt' in f]
 pmap = {}
 pid = 0
-max_pid = 8
+max_pid = 1
 
 for logfile in onlyfiles:
 	'''
@@ -300,7 +405,7 @@ for logfile in onlyfiles:
 		I will write the later algo later
 	'''
 
-	pmap[pid] = Process(target=cal_cross_thd_dep, args=(pid, [logdir, logfile]))
+	pmap[pid] = Process(target=cal_cross_thd_dep, args=(pid, [logdir, logfile, debug]))
 	pmap[pid].start()
 	print "Parent started worker ", pid
 	pid += 1;

@@ -108,6 +108,7 @@ class smt:
 			elif te.is_fence():
 				# Null epoch
 				# No epoch number should start from 0
+				# TODO : Record all null epochs in a separate file ??
 				self.null_ep_count += 1
 				self.ep = epoch([self.null_ep_count, te.get_time()], \
 								[self.tid, self.log, self.cwrt_set], \
@@ -226,6 +227,7 @@ class smt:
 		return self.tid
 		
 	def close_thread(self):
-		self.log.close()
+		if self.log is not None:
+			self.log.close()
 				
 			

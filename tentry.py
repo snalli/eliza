@@ -36,6 +36,7 @@ class tentry:
 		self.size = 0
 		self.caller = 'null'
 		self.callee = 'null'
+		self.pc = 0
 
 
 	def reset(self):
@@ -105,6 +106,12 @@ class tentry:
 	def set_caller(self, fun):
 		self.caller = fun
 		
+	def set_pc(self, pc):
+		self.pc = int(pc)
+		
+	def get_pc(self):
+		return self.pc
+		
 	def te_list(self):
 		l = []
 		l.append(str(self.tid))
@@ -138,6 +145,12 @@ class tentry:
 	def is_write(self):
 		if (self.te_type in self.c_write_ops) or \
 				(self.te_type in self.n_write_ops):
+			return True
+		else:
+			return False
+
+	def is_movnti(self):
+		if (self.te_type in self.n_write_ops):
 			return True
 		else:
 			return False
