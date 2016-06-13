@@ -290,13 +290,22 @@ def cal_cross_thd_dep(pid, args):
 							if addr not in recently_touched_addr:
 								recently_touched_addr[addr] = (tmstmp[0], tmstmp[1], f, ln, o_wrt)
 							else:
-								if (tmstmp[0], tmstmp[1], f, ln) > recently_touched_addr[addr]:
+								''' Temporary fix for carelessness in nstore. TODO : Remove later '''
+								a,b = tmstmp[1], tmstmp[0]
+								c,d = recently_touched_addr[addr][1],recently_touched_addr[addr][0]
+								# if (tmstmp[0], tmstmp[1], f, ln) > recently_touched_addr[addr]:
+								if (a,b) > (c,d):
 									recently_touched_addr[addr] = (tmstmp[0], tmstmp[1], f, ln, o_wrt)
 								# This tuple comparison is the key for this entire algorithm to work
 								'''
 									A key assumption that makes this work is that epochs that race
 									for NVM addresses will be rare or non-existent, which means dependent epochs 
 									will not race and strictly have a happens before relationship 
+									
+									NOTE : This assumption breaks when authors don't bother to carefully
+									issue fences. For eg, at the end of a txn PMFS and nstore don't bother
+									to fence their writes to NVM leading to long epochs. This messes with my
+									tools.
 								'''
 			''' 
 				What we've done so far is form a list of NVM addresses
