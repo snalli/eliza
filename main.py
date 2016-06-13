@@ -127,9 +127,11 @@ def digest(usrargs, sysargs):
 				if -1 in printl:
 					# Write all
 					op.write(tl)
+					op.flush()
 				elif te.get_tid() in printl:
 					# Write only specific tids
 					op.write(tl)
+					op.flush()
 
 			# caller = te.get_caller()
 			# callee = te.get_callee()
@@ -143,6 +145,7 @@ def digest(usrargs, sysargs):
 			if pt > 1: # pt = 2
 				l = te.te_list()
 				op.write('te = ' + str(l) + '\n')
+				op.flush()
 
 			# curr.update_call_chain(caller, callee)
 		
@@ -152,6 +155,7 @@ def digest(usrargs, sysargs):
 			if ep is not None:
 				if pt > 2: # pt = 3
 					op.write('ep = ' + str(ep.ep_list()) + '\n')
+					op.flush()
 
 				''' 
 					The analysis module will always return, but you
@@ -165,6 +169,7 @@ def digest(usrargs, sysargs):
 
 					if pt > 3: # pt = 4
 						op.write('tu[' + str(t_buf_len - 1) + '] = ' + str(t_buf[t_buf_len-1]) + '\n')
+						op.flush()
 
 					if t_buf_len == t_thresh:
 						for t in t_buf:
@@ -229,7 +234,7 @@ if __name__ == '__main__':
 		pmap = {}
 		shmmap = {}
 		qs = {}
-		logdir = '/dev/shm/' + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
+		logdir = '/scratch/' + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
 		os.mkdir(logdir)
 
 		#print "Calculating number of trace entries... please wait"
