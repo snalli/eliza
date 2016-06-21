@@ -1,11 +1,15 @@
 class cacheline:
 	"""Cacheline"""
 	cstates = set(['clean', 'dirty', 'invalid'])
-	
+	CSIZE = 64
+	CMASK = 0xffffffffffffffc0
+	COFF  = 0x3f
+		
 	def __init__(self, addr):
 		self.addr = addr
 		self.state = 'invalid'
 		self.dbufs = set()
+		self.dbytes = set()
 		assert self.addr is not None
 		assert self.state in self.cstates
 		
@@ -15,6 +19,12 @@ class cacheline:
 	def dirty(self, b_idx):
 		assert b_idx > -1 and b_idx < 8
 		self.dbufs.add(b_idx)
+
+	def dirty_bytes(self, ar, sz):
+		assert (ar & self.CMASK) == self.addr
+		for i in range(0, sz):
+			self.dbytes.add(ar - self.addr)
+			ar += i
 		
 	def get_dirtyness(self):
 		if 8 in self.dbufs:

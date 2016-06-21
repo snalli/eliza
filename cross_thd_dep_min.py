@@ -141,7 +141,7 @@ def make_lnmap(logdir, f):
 	f_to_lnnums_m[f] = lno_to_lines_m
 	
 def find_recent_past_ep_stime_helper(f, stime_, stime):
-	''' Return all epochs that started between stime_ and stime'''
+	''' Return all epochs that STARTED between stime_ and stime'''
 	f2e   = f_to_epochs_stime_m[f]
 	pos_  = bisect.bisect_left(f2e, (stime_,))
 	pos   = bisect.bisect_left(f2e, (stime,))
@@ -157,7 +157,7 @@ def find_recent_past_ep_stime_helper(f, stime_, stime):
 	return None
 
 def find_recent_past_ep_etime_helper(f, stime_, stime):
-	''' Return all epochs that ended between stime_ and stime'''
+	''' Return all epochs that ENDED between stime_ and stime'''
 	f2e   = f_to_epochs_etime_m[f]
 	pos_  = bisect.bisect_left(f2e, (stime_,))
 	pos   = bisect.bisect_left(f2e, (stime,))
@@ -173,22 +173,43 @@ def find_recent_past_ep_etime_helper(f, stime_, stime):
 	return None
 
 def find_recent_past_ep(f, stime_, stime):
+	''' Return all epochs that STARTED between stime_ and stime'''
 	t = find_recent_past_ep_stime_helper(f, stime_, stime)
 	if t is not None:
 		sno_st, eno_st, st1, st2 = t
 	else:
 		return t
 		
+	''' Return all epochs that ENDED between stime_ and stime'''
 	t = find_recent_past_ep_etime_helper(f, stime_, stime)
 	if t is not None:
 		sno_et, eno_et, et1, et2 = t
 	else:
 		return t
 
+	'''
+		Note : As a result of this really excellent coding (no sarcasm),
+		some epochs are being dropped. For example, an epoch that ends in
+		the last t secs but doesn't start in the last t secs will never get a
+		chance to be part of the most_recent_epochs group. 
+		So just return all the epochs that *ended* in the last t secs and 
+		as a result, one of the assertions in the main routine needs to be
+		disabled.
+	'''
+	return (sno_et, eno_et)
+	
 	s1 = set(range(sno_st, eno_st + 1))
 	s2 = set(range(sno_et, eno_et + 1))
 	s3 = s1.intersection(s2)
 	if len(s3) > 0:
+		# Some excellent coding here !
+		'''
+			For a thread of epochs,
+			sno_st = line number of first epoch that started between stime_ and stime
+			sno_et = line number of first epoch that ended   between stime_ and stime
+			eno_st = line number of last  epoch that started between stime_ and stime
+			eno_et = line number of last  epoch that ended   between stime_ and stime
+		'''
 		sno = max(sno_st, sno_et) # sno_st >= sno_et; An epoch in a thread cannot start before the previous one ends
 		eno = min(eno_st, eno_et) # eno_st >= eno_et; For the same reason above
 		assert sno in s3
@@ -202,6 +223,7 @@ def cal_cross_thd_dep(pid, args):
 	logdir = args[0]
 	logfile = args[1]
 	debug = int(args[2])
+	# You may empty this before every lookup but i don't cuz it can be reused
 	recently_touched_addr = {}
 	global wpid
 	global est
@@ -214,6 +236,7 @@ def cal_cross_thd_dep(pid, args):
 	wpid = pid
 	cross_dep_addrs = set()
 	cross_thread_deps_short = {}
+	self_thread_deps_short = {}
 	#if wpid != 2:
 	#	sys.exit(0)
 	est = ep_stats()
@@ -258,7 +281,9 @@ def cal_cross_thd_dep(pid, args):
 			#print '>>>>',lno+1,stime - lookback_time, stime, ep_addr
 			for f in onlyfiles:
 
-				t = find_recent_past_ep(f, stime - lookback_time, stime)
+				#t = find_recent_past_ep(f, stime - lookback_time, stime)
+				# Find epochs that ended before the current epoch in the last lookback_time secs
+				t = find_recent_past_ep(f, etime - lookback_time, etime)
 				if t is not None:
 					sno = t[0]
 					eno = t[1]
@@ -273,10 +298,12 @@ def cal_cross_thd_dep(pid, args):
 					'''
 					# print sno,'-',eno, f_to_lnnums_m[f][sno][1][0], f_to_lnnums_m[f][eno][1][1],f
 					# start and end times of left  most epoch falling in the interval (X - t) secs
-					assert stime - lookback_time <= f_to_lnnums_m[f][sno][1][0] and f_to_lnnums_m[f][sno][1][1] <= stime
+					# Disabled : assert stime - lookback_time <= f_to_lnnums_m[f][sno][1][0] and f_to_lnnums_m[f][sno][1][1] <= stime
 					# start and end times of right most epoch falling in the interval (X - t) secs
-					assert stime - lookback_time <= f_to_lnnums_m[f][eno][1][0] and f_to_lnnums_m[f][eno][1][1] <= stime	
+					# Disabled : assert stime - lookback_time <= f_to_lnnums_m[f][eno][1][0] and f_to_lnnums_m[f][eno][1][1] <= stime	
 					
+					# Only assert the end time of the right most epoch is within the desired interval
+					assert etime - lookback_time <= f_to_lnnums_m[f][eno][1][1] and f_to_lnnums_m[f][eno][1][1] <= etime	
 					for ln in range(sno, eno + 1):
 						l_addr  = f_to_lnnums_m[f][ln][0]
 						tmstmp  = f_to_lnnums_m[f][ln][1]
@@ -293,8 +320,9 @@ def cal_cross_thd_dep(pid, args):
 								''' Temporary fix for carelessness in nstore. TODO : Remove later '''
 								a,b = tmstmp[1], tmstmp[0]
 								c,d = recently_touched_addr[addr][1],recently_touched_addr[addr][0]
+								''' Last-writer-epoch owns the cache line. I think this is correct '''
 								# if (tmstmp[0], tmstmp[1], f, ln) > recently_touched_addr[addr]:
-								if (a,b) > (c,d):
+								if a > c:
 									recently_touched_addr[addr] = (tmstmp[0], tmstmp[1], f, ln, o_wrt)
 								# This tuple comparison is the key for this entire algorithm to work
 								'''
@@ -341,24 +369,25 @@ def cal_cross_thd_dep(pid, args):
 						if (f,ln,ea) not in cross_thread_deps:
 							cross_thread_deps.add((f,ln,ea))
 							if debug > 0:
-								#fo.write(str(ownership) + ' ' + str(ea) + ' ' + str(recently_touched_addr[ea]) + '\n')
-								fo.write(str(ea) + ' (' + str(s_wrt) + ',' + str(lno+1) + ') => ' + str(ea) + ' (' + str(w) + ',' + str(f) + ',' + str(ln) + ')\n')
-								tstr = str(s_wrt) + ' => ' + str(w) + '\n'
+								fo.write(ownership + ' ' + str(ea) + ' (' + str(s_wrt) + ',' + str(lno+1) + ') => ' + str(ea) + ' (' + str(w) + ',' + str(f) + ',' + str(ln) + ')\n')
+								tstr = str(s_wrt) + ' => ' + str(w) + ' '
 								if tstr in cross_thread_deps_short:
 									cross_thread_deps_short[tstr] += 1
 								else:
 									cross_thread_deps_short[tstr] = 1
 							n_cross += 1
-							# cross_dep_addrs.add(ea)
-					'''
 					else:
 						ownership = "self_thread"
-						if (f,ln) not in self_thread_deps:
-							self_thread_deps.add((f,ln))
+						if (f,ln,ea) not in self_thread_deps:
+							self_thread_deps.add((f,ln,ea))
 							if debug > 0:
-								fo.write(str(ownership, ea, recently_touched_addr[ea]))
+								fo.write(ownership + ' ' + str(ea) + ' (' + str(s_wrt) + ',' + str(lno+1) + ') => ' + str(ea) + ' (' + str(w) + ',' + str(f) + ',' + str(ln) + ')\n')
+								tstr = str(s_wrt) + ' => ' + str(w) + ' '
+								if tstr in self_thread_deps_short:
+									self_thread_deps_short[tstr] += 1
+								else:
+									self_thread_deps_short[tstr] = 1
 							n_self += 1
-					'''
 
 						# fantastic code, excellent use of data structures
 						# excellent use of bisect algo, python tuple comparison features
@@ -373,12 +402,17 @@ def cal_cross_thd_dep(pid, args):
 				recent owner epoch in a different SMT context !
 			'''
 	if debug > 0:
-		fo.write("\n\n Summary of dependencies \n\n")
+		fo.write("\n\n Summary of cross dependencies \n\n")
 		for k,v in cross_thread_deps_short.items():
-			fo.write(str(k) + ':' + str(v) + '\n')
+			fo.write(str(k) + ':' + str("cross") + '\n')
+		fo.write("\n\n Summary of self dependencies \n\n")
+		for k,v in self_thread_deps_short.items():
+			fo.write(str(k) + ':' + str("self") + '\n')
 		fo.close()
 	# print logfile, "n_cross=", n_cross," n_self=", n_self
 	print logfile, "n_cross=", n_cross #, sorted(list(cross_dep_addrs))
+	print logfile, "n_self=", n_self #, sorted(list(cross_dep_addrs))
+
 						
 # datadir = '/dev/shm/'
 datadir = '/scratch/'

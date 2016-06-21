@@ -50,7 +50,7 @@ class epoch:
 		self.etype = 'null'
 		self.size = 0
 		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.cwrite, 
-				'PM_I' : self.nwrite, 'PM_L' : self.clflush,
+				'PM_I' : self.cwrite, 'PM_L' : self.clflush,
 				'PM_XS' : self.do_nothing, 'PM_XE' : self.do_nothing,
 				'PM_C' : self.do_nothing}
 				
@@ -136,6 +136,8 @@ class epoch:
 		
 		n_cl = self.get_n_cl(s_addr, size)
 		s_cl = s_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
+		ar   = s_addr
+		sz   = 0
 		'''
 			This coding here is superb !
 			It takes care of writes that are un-aligned
@@ -150,9 +152,18 @@ class epoch:
 				by the epoch. But if we want to track dependency, we have 
 				to track ownership and for that we need to go one layer down !
 			'''
-			self.cwrite_cacheline(cl)
+			if (ar & self.CMASK) != ((ar + size - 1) & self.CMASK):
+				sz = ((ar + self.CSIZE) & self.CMASK) - ar
+			else:
+				sz = size
+				
+			self.cwrite_cacheline(cl, ar, sz)
+
+			ar = ar + sz
+			size = size - sz
 
 		self.writer = 'none'
+		assert size == 0
 		return s_cl + i*self.CSIZE
 
 	def clflush(self, te):
@@ -189,10 +200,9 @@ class epoch:
 		if size < self.BSIZE:
 			cl = cacheline(s_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 			self.cwrite_cacheline(cl)
-			
+
 			''' The write can be across cache-line boundaries '''
 			e_addr = s_addr + size - 1
-
 			#print "1)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
 			cl = cacheline(e_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 			self.cwrite_cacheline(cl)
@@ -214,12 +224,11 @@ class epoch:
 
 				''' The write can be across cache-line boundaries '''
 				e_addr = s_addr + size - 1
-
 				# print "3)", size, "b sa=", hex(s_addr & ~self.CMASK), " ea=", hex(e_addr & ~self.CMASK)
 				cl = cacheline(e_addr & self.CMASK) # ~(self.CMASK) CMASK = 0x3f
 				self.cwrite_cacheline(cl)
 
-				self.writer = 'none'					
+				self.writer = 'none'
 				return e_addr & self.CMASK # ~(self.CMASK) CMASK = 0x3f
 		elif size > self.BSIZE:
 
@@ -376,12 +385,14 @@ class epoch:
 		assert (__addr in self.rd_set) or (__addr in self.cwrt_set) or (__addr in self.nwrt_set)
 		assert (self.etype in self.epoch_types) and (self.etype != 'null')
 
-	def cwrite_cacheline(self, cl):
+	def cwrite_cacheline(self, cl, ar, sz):
 		assert self.etype in self.epoch_types
 
 		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
+		assert sz > 0
+		assert (ar & self.CMASK) == __addr
 		# self.logger(cl.get_addr())
 		
 		# Refer to state diagram
@@ -398,7 +409,9 @@ class epoch:
 			# self.check_dep(owner, __addr)
 			self.cwrt_set[__addr] = cl
 
+		''' Update stats ''' 
 		self.cwrt_set[__addr].dirty_all()
+		self.cwrt_set[__addr].dirty_bytes(ar, sz)
 		self.epaddr2pc[__addr] = str(self.writer) # Last writer wins
 		
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
