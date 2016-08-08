@@ -9,7 +9,7 @@ import argparse
 import traceback
 import gc
 import bisect
-import numpypy as np
+# import numpypy as np
 import ConfigParser
 import intervaltree as it
 # import matplotlib.pyplot as plt
@@ -140,48 +140,49 @@ def make_lnmap(logdir, f):
 	'''
 	f_to_lnnums_m[f] = lno_to_lines_m
 	
-def find_recent_past_ep_stime_helper(f, stime_, stime):
+def find_recent_past_ep_stime_helper(f, time_, time):
 	''' Return all epochs that STARTED between stime_ and stime'''
 	f2e   = f_to_epochs_stime_m[f]
-	pos_  = bisect.bisect_left(f2e, (stime_,))
-	pos   = bisect.bisect_left(f2e, (stime,))
+	pos_  = bisect.bisect_left(f2e, (time_,))
+	pos   = bisect.bisect_left(f2e, (time,))
 
 	if pos > pos_:
 		st1,sno = f2e[pos_]
 		st2,eno = f2e[pos-1] # To avoid index-out-of-range error
-		assert stime_ <= st1 and st1 <= stime
-		assert stime_ <= st2 and st2 <= stime
+		assert time_ <= st1 and st1 <= time
+		assert time_ <= st2 and st2 <= time
 		assert sno <= eno
 		return (sno,eno,st1,st2)
 		# iterate from eno to sno
 	return None
 
-def find_recent_past_ep_etime_helper(f, stime_, stime):
-	''' Return all epochs that ENDED between stime_ and stime'''
+def find_recent_past_ep_etime_helper(f, time_, time):
+	''' Return all epochs that ENDED between time_ and time'''
 	f2e   = f_to_epochs_etime_m[f]
-	pos_  = bisect.bisect_left(f2e, (stime_,))
-	pos   = bisect.bisect_left(f2e, (stime,))
+	pos_  = bisect.bisect_left(f2e, (time_,))
+	pos   = bisect.bisect_left(f2e, (time,))
 
 	if pos > pos_:
 		et1,sno = f2e[pos_]
 		et2,eno = f2e[pos-1] # To avoid index-out-of-range error
-		assert stime_ <= et1 and et1 <= stime
-		assert stime_ <= et2 and et2 <= stime
+		assert time_ <= et1 and et1 <= time
+		assert time_ <= et2 and et2 <= time
 		assert sno <= eno
 		return (sno,eno,et1,et2)
 		# iterate from eno to sno
 	return None
 
-def find_recent_past_ep(f, stime_, stime):
-	''' Return all epochs that STARTED between stime_ and stime'''
-	t = find_recent_past_ep_stime_helper(f, stime_, stime)
+def find_recent_past_ep(f, time_, time):
+	''' Return all epochs that STARTED between time_ and time
+	t = find_recent_past_ep_stime_helper(f, time_, time)
 	if t is not None:
 		sno_st, eno_st, st1, st2 = t
 	else:
 		return t
+	'''
 		
-	''' Return all epochs that ENDED between stime_ and stime'''
-	t = find_recent_past_ep_etime_helper(f, stime_, stime)
+	''' Return all epochs that ENDED between time_ and time'''
+	t = find_recent_past_ep_etime_helper(f, time_, time)
 	if t is not None:
 		sno_et, eno_et, et1, et2 = t
 	else:
@@ -197,7 +198,11 @@ def find_recent_past_ep(f, stime_, stime):
 		disabled.
 	'''
 	return (sno_et, eno_et)
-	
+	''' 
+		No need to proceed beyond this point. 
+		It is far too much detail for this paper.
+		Readers will get confused.
+	'''
 	s1 = set(range(sno_st, eno_st + 1))
 	s2 = set(range(sno_et, eno_et + 1))
 	s3 = s1.intersection(s2)
@@ -245,11 +250,12 @@ def cal_cross_thd_dep(pid, args):
 	onlyfiles = [f for f in listdir(logdir) if isfile(join(logdir, f)) and 'txt' in f]
 	
 	for f in onlyfiles:
-		make_index_by_stime(logdir, f)
+		# make_index_by_stime(logdir, f)
 		make_index_by_etime(logdir, f)
 		make_lnmap(logdir, f)
 
-	print "''' Core analysis begins here '''"
+	print \
+	''' Core analysis begins here '''
 	'''
     Added feature to detect and report cross thread dependencies
     on NVM addresses. It is a completely parallel algorithm.
@@ -414,8 +420,9 @@ def cal_cross_thd_dep(pid, args):
 	print logfile, "n_self=", n_self #, sorted(list(cross_dep_addrs))
 
 						
-# datadir = '/dev/shm/'
+datadir = '/dev/shm/'
 datadir = '/scratch/'
+datadir = '/nobackup/'
 colmap = {}
 colmap['etype'] = 0
 colmap['epoch_esize'] = 1
@@ -445,7 +452,7 @@ for logfile in onlyfiles:
 		
 		Have each process index all files except the one passed to it as argument
 		
-		I will write the later algo later
+		I will write the algo later
 	'''
 
 	pmap[pid] = Process(target=cal_cross_thd_dep, args=(pid, [logdir, logfile, debug]))

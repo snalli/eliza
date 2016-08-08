@@ -5,7 +5,7 @@ class epoch:
 
 	"""A structure per-SMT context"""
 
-	epoch_types = set(['null', 'rd-only','true'])
+	epoch_types = set(['null', 'rd-only','true', 'singleton', 'dualline'])
 	BSIZE = 8
 	CSIZE = 64
 	PSIZE = 4096
@@ -48,11 +48,17 @@ class epoch:
 		self.start_time = epargs[1]
 		self.end_time   = 0.0
 		self.etype = 'null'
+		self.personality = 0; # Default personality is type 0 and there
+							  # there can be 4 types
+							  # 0 = Null epoch or flush-only epoch
+							  # 1 = Data epoch
+							  # 2 = Ctrl or Data epoch
+							  # 3 = Data or Ctrl epoch 
 		self.size = 0
-		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.cwrite, 
-				'PM_I' : self.cwrite, 'PM_L' : self.clflush,
+		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.write, 
+				'PM_I' : self.write, 'PM_L' : self.clflush,
 				'PM_XS' : self.do_nothing, 'PM_XE' : self.do_nothing,
-				'PM_C' : self.do_nothing}
+				'PM_C' : self.do_nothing, 'PM_D': self.write}
 				
 		self.end_ops = ['PM_N','PM_B']
 
@@ -110,6 +116,38 @@ class epoch:
 
 	''' Stage 1 '''
 
+	def write(self, te):
+		
+		te_type = te.get_type()
+		# Data-centric vs. Ctrl-centric distinctions
+		# Data-centric : If an epoch contains even a single data write
+		# then the entire epoch is considered a data epoch else ctrl by default
+		# This is done for N-store
+		# Ctrl-centric : If an epoch contains even a single meta-data write,
+		# then the entire epoch is considered a metadata epoch else data by default
+		# This is done for PMFS, Mnemosyne
+		if te_type == 'PM_D':
+			if self.personality < 3:
+				self.personality = 3 # Data (Data-centric classification)
+				# For N this is data
+		elif te_type == 'PM_W':
+			if self.personality < 2:
+				self.personality = 2 # Ctrl or Data; depends on s/w 
+				# For M this is data
+				# For P this is meta
+				# For N this is meta
+		elif te_type == 'PM_I':
+			if self.personality < 3: # Data or Ctrl; depends on s/w (Control centric classification)
+				self.personality = 3
+				# For M this is meta
+				# For P this is data
+		else:
+			assert(0)
+			# We shouldn't be here for a non-write operation
+		
+		# Can distinguish later here for nti writes but not now
+		self.cwrite(te)
+		
 	def read(self, te):
 		addr = te.get_addr()
 		size = te.get_size()
@@ -157,7 +195,11 @@ class epoch:
 			else:
 				sz = size
 				
-			self.cwrite_cacheline(cl, ar, sz)
+			try:
+				self.cwrite_cacheline(cl, ar, sz)
+			except:
+				print self.cwrite.__name__, ":", cl, hex(cl.get_addr()), hex(s_cl + i*self.CSIZE), hex(ar), sz
+				assert 0
 
 			ar = ar + sz
 			size = size - sz
@@ -171,6 +213,8 @@ class epoch:
 		size = te.get_size()
 		
 		s_addr = int(addr, 16)
+		if(self.etype is not 'true'):
+			self.etype = 'true'
 		assert size > 0
 		assert s_addr > 0
 		return self.ecl(s_addr, size)
@@ -371,6 +415,7 @@ class epoch:
 		# Refer to state diagram
 		if __addr not in self.cwrt_set:
 			
+			# Because WCB is un-readable
 			if __addr in self.nwrt_set:
 				self.nwrt_set.pop(__addr)
 				
@@ -408,10 +453,20 @@ class epoch:
 		if __addr not in self.cwrt_set:
 			# self.check_dep(owner, __addr)
 			self.cwrt_set[__addr] = cl
+			''' 
+				Once added, the cl will remain in the write set
+				until written to non-temporally. Since that code path
+				is blocked, the cl will never leave the write set once
+				it enters it.
+			'''
 
 		''' Update stats ''' 
-		self.cwrt_set[__addr].dirty_all()
-		self.cwrt_set[__addr].dirty_bytes(ar, sz)
+		self.cwrt_set[__addr].set_dirty_bit()
+		try:
+			self.cwrt_set[__addr].dirty_bytes(ar, sz)
+		except:
+			print self.cwrite_cacheline.__name__,':', hex(__addr), hex(ar), sz
+			assert 0
 		self.epaddr2pc[__addr] = str(self.writer) # Last writer wins
 		
 		if (self.etype == 'null') or (self.etype == 'rd-only'):
@@ -511,7 +566,9 @@ class epoch:
 					self.log.write(',')
 				self.log.write(self.epaddr2pc[addr]);
 			self.log.write(';');
-			
+
+		if self.get_cwrt_set_sz() == 1:
+			self.etype = 'singleton'
 #		self.size = self.get_size()
 #		cwrt_set = self.cwrt_set
 #		nwrt_set = self.nwrt_set
@@ -529,6 +586,13 @@ class epoch:
 		
 		return c
 
+	def get_dirty_nbytes(self):
+		dirty_nbytes = 0
+		for a,cl in self.cwrt_set.iteritems():
+			dirty_nbytes += cl.get_dirty_nbytes()
+			
+		return dirty_nbytes
+		
 	def get_page_span(self):
 		return self.page_span
 		
@@ -590,6 +654,9 @@ class epoch:
 		# print "nwrt_sz", n_buf, float(n_buf)/ float(self.BSIZE)
 		return float(n_buf) / float(self.BSIZE)
 
+	def get_personality(self):
+		return self.personality
+		
 	def get_size(self):
 		return len(self.cwrt_set) + len(self.rd_set) + self.get_nwrt_set_sz()
 	

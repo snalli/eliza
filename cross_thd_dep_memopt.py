@@ -221,9 +221,12 @@ def find_recent_past_ep_etime_helper(f, time_, time):
 	if debug > dl:
 		print_frame()
 
+	''' Evict epochs that do not fall in the desired interval '''
+	# for intra thread only for now but works for inter thread as well
 	evict = []
 	for (et,lno) in f2e:
-		if time_ <= et and et <= time:
+		if time_ <= et and et < time:
+			# You stop at the first epoch that falls in the interval
 			if debug > dl:
 				print_frame()
 			break
@@ -239,10 +242,13 @@ def find_recent_past_ep_etime_helper(f, time_, time):
 		xxx,__lno = f2e.popleft()
 		assert __lno == lno
 
-			
 	if debug > dl:
 		print_frame()
 
+	''' 
+		Append a few more epochs that fall in the desired interval
+		The trailing epochs may not fall in the desired interval. 
+	'''
 	for l in fp: # 0 to n - 1
 		try:
 			lnnum += 1
@@ -273,7 +279,7 @@ def find_recent_past_ep_etime_helper(f, time_, time):
 			f2e.append((etime, lnnum+1))
 			lno2lines_m[lnnum+1] = tmpl
 
-			if not (time_ <= etime and etime <= time):
+			if (etime >= time):
 				if debug > dl:
 					print_frame()
 				break			
@@ -285,12 +291,26 @@ def find_recent_past_ep_etime_helper(f, time_, time):
 	f_to_epochs_etime_m[f] = f2e
 	f_to_lnnums_m[f] = lno2lines_m
 
-	# for intra thread only for now
-	if (len(f2e)-2) > 0:
+	if len(f2e) > 0:
 		et1,sno = f2e[0]
-		et2,eno = f2e[len(f2e)-3] # To avoid index-out-of-range error
-		assert time_ <= et1 and et1 <= time
-		assert time_ <= et2 and et2 <= time
+		et2,eno = et1,sno
+		if time_ <= et1 and et1 < time:
+			for (et,lno) in f2e:
+				if et < time:
+					et2,eno = et,lno
+				else:
+					return (sno, eno, et1, et2)
+		else:
+			return None
+	else:
+		return None		
+		
+	'''
+	if (len(f2e)-1) > 0:
+		et1,sno = f2e[0]
+		et2,eno = f2e[len(f2e)-2] # To avoid index-out-of-range error
+
+		assert (time_ <= et1 and et1 < time)
 		assert sno <= eno
 		if debug > dl:
 			print_frame()
@@ -301,6 +321,7 @@ def find_recent_past_ep_etime_helper(f, time_, time):
 			print_frame()
 
 		return None
+	'''
 
 def find_recent_past_ep(f, time_, time):
 	''' Return all epochs that STARTED between time_ and time
@@ -376,6 +397,7 @@ def cal_cross_thd_dep(pid, args):
 	cross_dep_addrs = set()
 	cross_thread_deps_short = {}
 	self_thread_deps_short = {}
+	cl_overwrites_single_smt = {}
 	#if wpid != 2:
 	#	sys.exit(0)
 	est = ep_stats()
@@ -435,7 +457,7 @@ def cal_cross_thd_dep(pid, args):
 					eno = t[1]
 					if f == logfile:
 						if eno >= lno + 1:
-							print eno, lno + 1, f
+							print sno, eno, lno + 1, f, f_to_epochs_etime_m[f]
 							assert eno < lno + 1
 					
 					'''
@@ -450,12 +472,14 @@ def cal_cross_thd_dep(pid, args):
 					# start and end times of right most epoch falling in the interval (X - t) secs
 					# Disabled : assert stime - lookback_time <= f_to_lnnums_m[f][eno][1][0] and f_to_lnnums_m[f][eno][1][1] <= stime	
 					
-					# Only assert the end time of the right most epoch is within the desired interval
+
 					if debug > dl:
 						print sno, etime - lookback_time, f_to_lnnums_m[f][sno][1], etime
 						print eno, etime - lookback_time, f_to_lnnums_m[f][eno][1], etime
 						
-					assert etime - lookback_time <= f_to_lnnums_m[f][eno][1][1] and f_to_lnnums_m[f][eno][1][1] <= etime	
+					# Only assert the end time of the right most epoch is within the desired interval
+					assert (etime - lookback_time <= f_to_lnnums_m[f][sno][1][1] and f_to_lnnums_m[f][sno][1][1] < etime)
+					assert (etime - lookback_time <= f_to_lnnums_m[f][eno][1][1] and f_to_lnnums_m[f][eno][1][1] < etime)
 					for ln in range(sno, eno + 1):
 						if ln not in f_to_lnnums_m[f]:
 							continue
@@ -507,11 +531,12 @@ def cal_cross_thd_dep(pid, args):
 				s_wrt = self_writers[i]
 				if ea in recently_touched_addr:
 					# Asserting that the starting time of last owning epoch is within X & (X - t) secs - GOOD !
-					b0 = (stime - lookback_time <= recently_touched_addr[ea][0] and recently_touched_addr[ea][0] <= stime)
+					# b0 = (stime - lookback_time <= recently_touched_addr[ea][0] and recently_touched_addr[ea][0] <= stime)
 					# Asserting that the ending time of last owning epoch is within X & (X - t) secs - GOOD !
-					b1 = (stime - lookback_time <= recently_touched_addr[ea][1] and recently_touched_addr[ea][1] <= stime)
-					if not (b0 and b1):
-						continue
+					# b1 = (etime - lookback_time <= recently_touched_addr[ea][1] and recently_touched_addr[ea][1] < etime)
+					# if not b1:
+					#	continue
+					# IF COMMENTING THIS, MAKE SURE TO CLEAR THE RECENTLY_USED_ADDR CACHE !!!!!
 						
 					if nprint[ea] == 0 and debug > 1:
 							# fo.write('>>>> ' + str(lno+1) + ' ' + str(stime - lookback_time) + ' ' + str(stime) + ' ' + str(ep_addr) + '\n')
@@ -523,7 +548,9 @@ def cal_cross_thd_dep(pid, args):
 						ownership = "cross_thread"
 						if (f,ln,ea) not in cross_thread_deps:
 							cross_thread_deps.add((f,ln,ea))
-							if debug > 0:
+							if debug > 0: # d = 1
+								# The difference between lno+1 and ln gives the reuse-distance of a cache-line 
+								# in terms of epochs
 								fo.write(ownership + ' ' + str(ea) + ' (' + str(s_wrt) + ',' + str(lno+1) + ') => ' + str(ea) + ' (' + str(w) + ',' + str(f) + ',' + str(ln) + ')\n')
 								# W happened before s_wrt
 								tstr = str(s_wrt) + ' => ' + str(w) + ' '
@@ -539,12 +566,19 @@ def cal_cross_thd_dep(pid, args):
 							if debug > 0:
 								fo.write(ownership + ' ' + str(ea) + ' (' + str(s_wrt) + ',' + str(lno+1) + ') => ' + str(ea) + ' (' + str(w) + ',' + str(f) + ',' + str(ln) + ')\n')
 								# W happened before s_wrt
+								
+								if ea not in cl_overwrites_single_smt:
+									cl_overwrites_single_smt[ea] = 0
+								cl_overwrites_single_smt[ea] += 1
+								
 								tstr = str(s_wrt) + ' => ' + str(w) + ' '
 								if tstr in self_thread_deps_short:
 									self_thread_deps_short[tstr] += 1
 								else:
 									self_thread_deps_short[tstr] = 1
 							n_self += 1
+
+			recently_touched_addr = {} # Not needed if we do time-intv check above b1, b0
 
 						# fantastic code, excellent use of data structures
 						# excellent use of bisect algo, python tuple comparison features
@@ -558,13 +592,14 @@ def cal_cross_thd_dep(pid, args):
 				recent owner epoch. Then we simply check this cache for the most
 				recent owner epoch in a different SMT context !
 			'''
-	if debug > 0:
+	if debug > 0: # d = 1
 		fo.write("\n\n Summary of cross dependencies \n\n")
 		for k,v in cross_thread_deps_short.items():
-			fo.write(str(k) + ':' + str("cross") + '\n')
+			fo.write(str(k) + ':' + str(v) + ':' + str("cross") + '\n')
 		fo.write("\n\n Summary of self dependencies \n\n")
 		for k,v in self_thread_deps_short.items():
-			fo.write(str(k) + ':' + str("self") + '\n')
+			fo.write(str(k) + ':' + str(v) + ':' + str("self") + '\n')
+		# Write the median number of times a CL was over-written on the same thread
 		fo.close()
 	# print logfile, "n_cross=", n_cross," n_self=", n_self
 	print logfile, "n_cross=", n_cross #, sorted(list(cross_dep_addrs))
@@ -573,8 +608,8 @@ def cal_cross_thd_dep(pid, args):
 
 						
 # datadir = '/dev/shm/'
-datadir = '/scratch/'
-# datadir = '/nobackup/'
+# datadir = '/scratch/'
+datadir = '/nobackup/'
 colmap = {}
 colmap['etype'] = 0
 colmap['epoch_esize'] = 1
@@ -593,7 +628,7 @@ cfg.read('data.ini')
 onlyfiles = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.txt' in f]
 pmap = {}
 pid = 0
-max_pid = 1
+max_pid = 4
 
 for logfile in onlyfiles:
 	'''

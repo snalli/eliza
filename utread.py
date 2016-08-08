@@ -84,11 +84,15 @@ class utread:
 				del te
 				return None
 
+			''' I didn't know that Sanketh had put this code here ! Great ! '''
 			te_time = int(l[1])
 			if te_time >= self.prev_t:
 				self.prev_t = te_time
 			else:
 				print "TIME CHECK FAIL", self.lno, te.te_type, te.get_tid(), te_time, self.prev_t
+				# assert 0
+				te_time = self.prev_t
+				self.prev_t = te_time
 				
 			te.set_time(te_time)
 			te.set_callee('null')
@@ -100,7 +104,7 @@ class utread:
 					te.set_addr(l[3])
 					te.set_size(int(l[4]))
 					
-					if te.is_movnti() is True:
+					if (te.is_movnti() is True) or (te.is_flush() is True):
 						te.set_caller(l[6])
 						te.set_pc(int(l[7]))
 					else:

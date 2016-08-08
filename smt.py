@@ -1,26 +1,17 @@
-from epoch import epoch
+from txn import tx
 from tentry import tentry
+import sys
 import os,csv,gzip
-from ep_stats import ep_stats
 
 
 class smt:
 	def __init__(self, tid, usrargs, sysargs):
 		self.tid = tid
-		self.ep = None #epoch(0, 0.0)
-		self.ep_ops = None #self.ep.get_ep_ops()
-		self.true_ep_count = 0 # Count of true epochs
-		self.null_ep_count = 0 # Count of null epochs
-		self.cwrt_set = {}
-		self.call_chain = []
-
-		self.ppid = sysargs[0]
-		self.logdir = sysargs[6]
-
-		self.usrargs = usrargs
-		self.flow = self.usrargs.flow
-		self.tfile = self.usrargs.tfile
-		
+		self.tx = None
+		self.txid = 0
+		self.tx_count = 0
+		self.cwrt_set = {} # ?
+		self.tx_stack = [] # For nested txns, may shift to real stack later
 		# Clear away any previous epochs you may have recorded
 		# We are maitaining per-thread logs of all NVM writes
 		'''
@@ -32,6 +23,12 @@ class smt:
 					
 		self.log = csv.writer(self.csvlog)		
 		'''
+		# Open a per-thread log file here
+		self.sysargs = sysargs
+		self.usrargs = usrargs
+		self.logdir = sysargs[6]
+		self.tfile = self.usrargs.tfile
+		self.log = None
 		if self.usrargs.reuse > 0: #1,2,3
 			print self.logdir + '/' + str(os.path.basename(self.tfile.split('.')[0])) \
 				+ '-' + str(self.tid) + '.txt'
@@ -44,18 +41,6 @@ class smt:
 		else:
 			self.log = None
 			
-		self.est = ep_stats()
-
-		
-	def sanity(self, sa, sz, r):
-			return
-			sa = int(sa, 16)
-			ea = sa + sz - 1 # This prevents an off-by-one error
-			ecl = ea & ~(63)
-			if ecl !=r :
-				print hex(ecl), hex(r)
-			assert ecl == r
-
 	def log_start_entry(self):
 		if self.log is not None:
 			self.log.write('{;')
@@ -67,7 +52,7 @@ class smt:
 	def log_insert_entry(self, lentry):
 		if self.log is not None:
 			self.log.write(str(lentry) + ';')
-	
+				
 	def do_tentry(self, te):
 		'''
 			A thread can receive a compound operation or a simple
@@ -84,148 +69,101 @@ class smt:
 		ret = None
 		te_type = te.get_type()
 		log = self.log
-		est = self.est
 		
-		if self.ep is None: 
-			if te.is_write():
-				# The beginning of a new epoch
-				self.log_start_entry()
-
-				# No epoch number should start from 0
-				self.true_ep_count += 1
-				self.ep = epoch([self.true_ep_count, te.get_time()], \
-								[self.tid, self.log, self.cwrt_set], \
-								self.usrargs) 
-								#self.tid, te.get_time(), log)
-				self.ep_ops = self.ep.get_ep_ops()
-				
-				r = self.ep_ops[te_type](te)
-				''' Size has to be greater than 0'''
-				self.sanity(te.get_addr(), te.get_size(), r)
-
-				assert self.ep.is_true()
-				
-			elif te.is_fence():
-				# Null epoch
-				# No epoch number should start from 0
-				# TODO : Record all null epochs in a separate file ??
-				self.null_ep_count += 1
-				self.ep = epoch([self.null_ep_count, te.get_time()], \
-								[self.tid, self.log, self.cwrt_set], \
-								self.usrargs) 
-				self.ep_ops = self.ep.get_ep_ops()
-				self.ep.end_epoch(te)
-
-				ret = self.ep
-				self.ep = None
-				self.ep_ops = None
-
-				# self.log_start_entry()
-				# self.log_insert_entry(est.get_str(ret))
-				# self.log_end_entry()
-		else: 
-			# True epoch
-			if te.is_fence():
-				# The end of another epoch
-				self.ep.end_epoch(te)
-				ret = self.ep
-				self.ep = None
-				self.ep_ops = None
-
-				self.log_insert_entry(est.get_str(ret))
-				self.log_end_entry()
-
-			else:
-					
-				r = self.ep_ops[te_type](te)
-				if(te.get_size() > 0):
-					self.sanity(te.get_addr(), te.get_size(), r)
-				
-		return ret
-		'''
-		if te.is_write() is True:
-			if self.ep.is_null():
-				self.ep.set_tid(self.tid)
-				self.ep.set_time(te.get_time())
+		if te.is_tx_start():
 			
-			assert te_type in self.ep_ops
+			if self.tx is None:
+				assert self.tx_count == 0
+				self.tx_count += 1
+				self.txid += 1
+				''' Create a new txn context '''
+				self.tx = tx([self.tid, self.txid, te.get_time(), 	\
+								self.log, self.cwrt_set], 			\
+								self.usrargs, self.sysargs)
+				assert self.tx is not None
+
+			return self.tx.do_tentry(te)
 			
-			ep_op = self.ep_ops[te_type]
-			r = ep_op(te)
-			if(te.get_size()):
-				self.sanity(te.get_addr(), te.get_size(), r)
-				# Do a sanity check only when u have memory accesses
-			assert self.ep.is_true() is True
-		elif te.is_fence():
-			if self.ep.is_null(): # null epoch
-				self.ep.set_tid(self.tid)
-				self.ep.set_time(te.get_time())
-				self.ep.end_epoch(te)
-				ret = self.ep
-				self.ep.reset()
-			else:
-				assert self.ep.is_true() is True
-				self.ep.end_epoch(te)
-				ret = self.ep
-				self.ep.reset()
-		else:
-			if self.ep.is_true():
-				ep_op = self.ep_ops[te_type]
-				r = ep_op(te)
-				if(te.get_size() > 0):
-					self.sanity(te.get_addr(), te.get_size(), r)
-				# Do a sanity check only when u have memory accesses
-		return ret
-		'''
-	
-	def update_call_chain(self, caller, callee):
-		if self.flow is False:
-			return
+			''' 
+				For nested transactions 
+				Abandoning this code in favor of PMFS.
+				For userspace, you may plug it back in
 			
-		l = len(self.call_chain)
-		
-		if caller != 'null':
-			if l == 0:
-				self.call_chain.append(caller)
-			elif caller != self.call_chain[l-1]:
-				self.call_chain.append(caller)
-		
-		if callee == 'null':
-			# print "(update_call_chain)", self.tid, self.time
-			# callee cannot be null because the processor always is 
-			# inside a callee !
-			assert callee != 'null'
-		else:
-			if l == 0:
-				self.call_chain.append(callee)
-			elif callee != self.call_chain[l-1]:
-				self.call_chain.append(callee)
-	
-	def get_call_chain(self):
-		if self.flow is False:
+			if self.tx is not None:
+				self.tx_stack.append(self.tx)
+				
+			self.txid += 1
+			self.tx = tx([self.tid, self.txid, te.get_time(), 	\
+							self.log, self.cwrt_set], 			\
+							self.usrargs, self.sysargs)
+			assert self.tx is not None
+			return self.tx.do_tentry(te)
+			'''
+		elif te.is_tx_end():
+
+			if self.tx_count > 0:
+				self.tx_count -= 1
+			
+			if self.tx_count == 0 and (self.tx is not None): 
+				try:
+					ret = self.tx.tx_end(te)
+				except:
+					print "THD_ERR1", te.te_list()
+					sys.exit(0)
+				
+				self.tx = None
+				
 			return None
 			
-		if len(self.call_chain) == 0:
-			# print "(get_call_chain)", tid
-			assert len(self.call_chain) != 0
+			'''
+				For nested transactions 
+				Abandoning this code in favor of PMFS.
+				For userspace, you may plug it back in
+
+			if self.tx is None:
+				return None
+				# Houston, something is wrong and we lost the start of the txn
+				# So ignore and proceed
+				
+			try:
+				ret = self.tx.tx_end(te)
+			except:
+				print "THD_ERR1", te.te_list()
+				sys.exit(0)
+
+			self.tx = None
+			if len(self.tx_stack) > 0:
+				self.tx = self.tx_stack.pop()
+			return ret
+			'''
 		else:
-			call_str = 'S'
-			m = "->"
-			for f in self.call_chain:
-				call_str += m
-				call_str += f
+			if self.tx is None:
+				return None
+			# We don't care about operations outside a txn
 			
-		call_str += m
-		call_str += 'E'	
-		self.call_chain = []
-		return call_str
+			#try:
+			return self.tx.do_tentry(te)
+			#except:
+			#	print "THD_ERR2", te.te_list()
+			#	sys.exit(0)			
+									
+	def update_call_chain(self, caller, callee):
+		return self.tx.update_call_chain(caller, callee)
+	
+	def get_call_chain(self):
+		return self.tx.get_call_chain()
 	
 	def clear_call_chain(self):
-		self.call_chain = []
+		self.tx.clear_call_chain()
 		
 	def get_tid(self):
 		return self.tid
 		
+	def get_tid(self):
+		if tx is not None:
+			assert tx.get_txid() == self.txid
+		return self.txid
+
 	def close_thread(self):
 		if self.log is not None:
 			self.log.close()

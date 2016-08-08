@@ -29,6 +29,7 @@ class ftread:
 		assert tl is not None
 		te = tentry()
 
+		''' Are there any trace entries to be avoided ? '''
 		if self.nti is False:
 			for t in self.NTI:
 				if t in tl:
@@ -68,14 +69,24 @@ class ftread:
 		if te.get_tid() % self.n != self.pid:
 			del te
 			return None
+		try:	
+			tmp_time = l[3].split(':')[0].split('.')
+			te.set_time(int(tmp_time[0])*1000000 + int(tmp_time[1]))
+			te.set_callee('null')
+			te.set_caller(l[4].split(':')[0])
 			
-		te.set_time(float(l[3].split(':')[0]))
-		te.set_callee(l[4].split(':')[0])
-			
-		if te.need_arg():
-			__l = l[5].split(':')	
-			te.set_addr(__l[1])
-			te.set_size(int(__l[2]))
+			if te.need_arg():
+				__l = l[5].split(':')	
+				te.set_addr(__l[1])
+				te.set_size(int(__l[2]))
+
+				if (te.is_movnti() is True) or (te.is_flush() is True):
+					te.set_pc(int(__l[5]))
+				else:
+					te.set_pc(int(__l[4]))
+		except:
+			print te.te_list()
+			sys.exit(0)
 		#else:
 		#	te.set_callee(l[4])
 			# te.set_caller(l[5].split('-')[1])

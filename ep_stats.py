@@ -31,8 +31,18 @@ class ep_stats:
 		r1 = ep.get_page_span()
 		r2 = ep.get_dist_from_mrd()
 		r3 = ep.get_dist_from_lrd()
-		r4 = 0.0
-		
+		if cwsize > 0:
+			r4 = round(float(float(ep.get_dirty_nbytes()) / float(cwsize*epoch.CSIZE)),2)
+		else:
+			r4 = 0.0
+		assert 0.0 <= r4 and r4 <= 1.0
+		r4 = round((r4 * 100.0), 2)
+		# r4 = ep.get_dirty_nbytes()
+		'''
+		t =  ((0) etype, (1) esize, (2) wsize, (3) cwsize,
+		        (4) stime, (5) etime, (6) r1, (7) r2, (8) r3 ,(9) r4, 
+		        (10) tid)
+		'''
 		t =  (etype, esize, wsize, cwsize,
 		        stime, etime, r1, r2, r3 ,r4, tid)
 		
@@ -53,9 +63,14 @@ class ep_stats:
 		r1 = ep.get_page_span()
 		r2 = ep.get_dist_from_mrd()
 		r3 = ep.get_dist_from_lrd()
-		r4 = 0.0
+		if cwsize > 0:
+			r4 = round(float(float(ep.get_dirty_nbytes()) / float(cwsize*epoch.CSIZE)),2)
+		else:
+			r4 = 0.0
+		assert 0.0 <= r4 and r4 <= 1.0
+		r4 = round((r4 * 100.0), 2)
 		
-		return  str(esize) + ','  + str(wsize) + ',' \
+		return  str(etype) + ',' + str(esize) + ','  + str(wsize) + ',' \
 				+ str(stime) + ',' + str(etime) + ',' \
 				+ str(r1) + ',' + str(r2) + ',' + str(r3) + ',' + str(r4) + ',' \
 
@@ -67,9 +82,9 @@ class ep_stats:
 	
 	def get_stime_from_str(self, epstr):
 		assert epstr is not None
-		return float(epstr.split(',')[2])
+		return float(epstr.split(',')[3])
 
 	def get_etime_from_str(self, epstr):
 		assert epstr is not None
-		return float(epstr.split(',')[3])
+		return float(epstr.split(',')[4])
 		

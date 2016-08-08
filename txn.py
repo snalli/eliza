@@ -7,6 +7,7 @@ from ep_stats import ep_stats
 
 class tx:
 	def __init__(self, tidargs, usrargs, sysargs):
+
 		self.tid = tidargs[0]
 		self.txid = tidargs[1]
 		self.__tx_start = tidargs[2]
@@ -30,6 +31,8 @@ class tx:
 		self.flow = self.usrargs.flow
 
 		self.est = ep_stats()
+		self.ptype = [0,0,0,0]
+
 
 		
 	def sanity(self, sa, sz, r):
@@ -88,11 +91,11 @@ class tx:
 								#self.tid, te.get_time(), log)
 				self.ep_ops = self.ep.get_ep_ops()
 				
-				try:
-					r = self.ep_ops[te_type](te)
-				except:
-					print te.te_list()
-					sys.exit(0) #assert 0
+				#try:
+				r = self.ep_ops[te_type](te)
+				#except:
+				#	print "TXN_ERR1", te.te_list()
+				#	assert 0
 				''' Size has to be greater than 0'''
 				self.sanity(te.get_addr(), te.get_size(), r)
 
@@ -123,6 +126,10 @@ class tx:
 				self.prev_ep_end = te.get_time()
 				
 				self.ep.end_epoch(te)
+				''' Get some stuff about the epoch '''
+				pty = self.ep.get_personality()
+				self.ptype[pty] += 1
+
 				ret = self.ep
 				self.ep = None
 				self.ep_ops = None
@@ -134,7 +141,7 @@ class tx:
 				try:	
 					r = self.ep_ops[te_type](te)
 				except:
-					print te.te_list()
+					print "TXN_ERR2", te.te_list()
 					sys.exit(0) #assert 0
 				if(te.get_size() > 0):
 					self.sanity(te.get_addr(), te.get_size(), r)
@@ -228,17 +235,52 @@ class tx:
 		return self.txid
 	
 	def tx_end(self, te):
-		assert self.__tx_end == 0.0
-		assert self.ep is None
-		self.__tx_end = te.get_time()
-		assert self.__tx_end > self.__tx_start
-		iad = float(self.inter_arrival_duration)
-		c = float(self.true_ep_count)
-		le = ['PM_TX', self.__tx_start, self.__tx_end, \
-				self.true_ep_count, self.null_ep_count, round(iad/c, 2)]
-		for li in le:
-			self.log.write(str(li) + ',')
-		self.log.write(';')
+
+		try:
+			assert self.__tx_end == 0.0
+		
+			if self.ep is not None:
+				self.prev_ep_end = te.get_time()
+				# This code is here only because of M, due to its bad design
+				self.ep.end_epoch(te)
+				ret = self.ep
+				self.ep = None
+				self.ep_ops = None
+
+				self.log_insert_entry(self.est.get_str(ret))
+				self.log_end_entry()
+				
+			self.__tx_end = te.get_time()
+			assert self.__tx_end >= self.__tx_start
+			iad = float(self.inter_arrival_duration)
+			c = float(self.true_ep_count)
+			avg_iad = 0.0
+			
+			if c > 0:
+				avg_iad = round(iad/c, 2)
+
+			t3byt2 = 0.0
+			t2byt3 = 0.0
+
+			if self.ptype[2] > 0:
+				t3byt2 = float(self.ptype[3]) / float(self.ptype[2])
+			if self.ptype[3] > 0:
+				t2byt3 = float(self.ptype[2]) / float(self.ptype[3])
+
+
+			le = ['PM_TX', self.__tx_start, self.__tx_end, \
+					self.true_ep_count, self.null_ep_count, avg_iad, \
+					round(t3byt2,2), round(t2byt3,2)]
+			self.log_start_entry()
+			for li in le:
+				# for each list item in list entries
+				self.log.write(str(li) + ',')
+			self.log.write(';')
+			self.log_end_entry()
+		except:
+			print self.tid, self.txid, self.__tx_start, self.__tx_end
+			assert False
+
 		return None
 
 						

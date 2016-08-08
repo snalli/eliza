@@ -7,10 +7,10 @@ import csv
 import argparse
 import traceback
 import gc
-import numpy as np
+# import numpypy as np
 import ConfigParser
-import matplotlib.pyplot as plt
-from pylab import *
+# import matplotlib.pyplot as plt
+# from pylab import *
 from os import listdir
 from os.path import isfile, join
 
@@ -23,6 +23,7 @@ parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1'
 parser.add_argument('-r', dest='logdir', help="Log directory containing per-thread epoch logs and summary")
 
 datadir = '/scratch/'
+datadir = '/nobackup/'
 try:
 	args = parser.parse_args()
 except:
@@ -30,9 +31,14 @@ except:
 	sys.exit(0)
 
 logdir = datadir + args.logdir
-only_csv_files = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.csv' in f]
-assert len(only_csv_files) == 1
-summary = logdir + '/' + only_csv_files[0]
+
+stf = 0
+try:
+	stf = open(logdir + "/stats", 'w')
+except:
+	print "Could not open stat file", logdir, "/stats"
+	sys.exit(0)
+
 '''
 for i in range(0,w):
 	cq = '/dev/shm/.' + str(os.path.basename(tfile.split('.')[0])) + '_' + str(i) + '.q'
@@ -159,11 +165,24 @@ def cdf(arr, fname, xaxis, heading, content, clear):
 	gname = 'png/' + os.path.basename(fname).split('.')[0] + '-' + content + '.png'
 	savefig(gname, format='png', dpi=100)
 
-	
-def analyze():
 
-	global summary
-	fname = summary
+def classify(_map, count):
+		
+		global stf
+		for k in sorted(_map.keys()):
+			abs_fq = _map[k]
+			rel_fq = float(round(100*abs_fq/count,2))
+			stf.write(str(k) + "		" + str("{:,}".format(abs_fq)) + "		" + str(rel_fq)+"\n")
+
+def get_epoch_level_info(only_csv_files):
+
+	# get_size_distribution(only_csv_files)
+	# get_dirty_byte_distribution_true
+	# get_dirty_byte_distribution_singleton
+
+	global logdir
+	global stf
+	fname = logdir + '/' + only_csv_files[0]
 
 	'''
 		t =  ((0) etype, (1) esize, (2) wsize, (3) cwsize,
@@ -177,11 +196,36 @@ def analyze():
 
 	'''
 	sz_map = {}
+	dy_map_true = {}
+	dy_map_single = {}
 	count = 0
+	tot_count = 0
+	true_ep_count = 0
+	singleton_count = 0
 	with open(fname, 'r') as fp:
 		for te in fp:
 			tl = te.split(',')
+			ep_type = tl[0]
+
 			sz = float(tl[2])
+			
+			if ep_type == 'true' or ep_type == 'singleton':
+				dirty_true = float(tl[9])
+				true_ep_count += 1
+
+				if dirty_true in dy_map_true:
+					dy_map_true[dirty_true] += 1
+				else:
+					dy_map_true[dirty_true] = 1
+	
+				if ep_type == 'singleton':
+					dirty_single = dirty_true
+					singleton_count += 1
+					if dirty_single in dy_map_single:
+						dy_map_single[dirty_single] += 1
+					else:
+						dy_map_single[dirty_single] = 1
+
 			if sz in sz_map:
 				sz_map[sz] += 1
 			else:
@@ -189,14 +233,89 @@ def analyze():
 				
 			count += 1
 			if (count % 1000000) == 0:
-				print "Completed 1,000,000 rows"
+				tot_count += 1000000
+				print "Analyzed ", str("{:,}".format(tot_count)), " epochs"
 
-		print "Epoch sizes		Abs.freq.		Rel. freq."
-		print "==========================================="
-		for sz in sorted(sz_map.keys()):
-			abs_fq = sz_map[sz]
-			rel_fq = float(round(100*abs_fq/count,2))
-			print sz,"		",abs_fq,"		", rel_fq
+		stf.write("Epoch sizes		Abs.freq.		Rel. freq.\n")
+		stf.write("=========================================================\n")
+		classify(sz_map, count)
+		stf.write("\n\n")
+
+		stf.write("True Epoch dirty		Abs.freq.		Rel. freq.\n")
+		stf.write("=========================================================\n")
+		classify(dy_map_true, true_ep_count)
+		stf.write("\n\n")
+				
+		stf.write("Singleton dirty		Abs.freq.		Rel. freq.\n")
+		stf.write("=========================================================\n")
+		classify(dy_map_single, singleton_count)
+		stf.write("\n\n")
 		
+def get_thread_level_info(only_txt_files):
+	
+	global logdir
+	global stf
+	tot_tx = 0
+	tot_working_set = {}
+	n_tx_per_thread = {}
+	n_ep_per_tx     = {}
+	for f in only_txt_files:
+		fname = logdir + '/' + f
+		print "Collecting working set of", fname
 
-analyze()
+		with open(fname, 'r') as fp:
+			for lno,te in enumerate(fp):
+				# Ignore end-of-tx entries
+				# Focus on end-of-epoch entries
+
+				if 'PM_TX' not in te:
+
+					l_addr = te.split(';')[1].split(',')
+					for addr in l_addr:
+						if addr not in tot_working_set:
+							tot_working_set[addr] = 0
+						tot_working_set[addr] += 1
+				else:
+					tot_tx += 1
+					if f not in n_tx_per_thread:
+						n_tx_per_thread[f] = 0
+					n_tx_per_thread[f] += 1		# Count of tx in this thread
+
+					n_true_ep = te.split(',')[3] # Num of true eps in this tx
+					if n_true_ep not in n_ep_per_tx:
+						n_ep_per_tx[n_true_ep] = 0
+					n_ep_per_tx[n_true_ep] += 1
+	
+	print "Combining working sets of all threads..."
+	#for addr,freq in tot_working_set.items():
+	#	print addr, freq
+	print "Working set size ", str("{:,}".format(len(tot_working_set.keys()) * 64)), " bytes"
+
+	stf.write("Thread ID		Number of Tx per thread\n")
+	stf.write("=========================================================\n")
+	for k,v in n_tx_per_thread.items():
+		stf.write(str(k) + " " + str(v) + "\n")
+	stf.write("\n\n")
+
+	stf.write("Ep count per tx		Abs.freq.		Rel. freq.\n")
+	stf.write("=========================================================\n")
+	classify(n_ep_per_tx, tot_tx)
+	stf.write("\n\n")
+	
+
+print '''Gathering epoch level statistics '''
+only_csv_files = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.csv' in f]
+assert len(only_csv_files) == 1
+get_epoch_level_info(only_csv_files)
+print '''DONE Gathering epoch level statistics '''
+
+print '''Gathering thread level statistics '''
+only_txt_files = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.txt' in f]
+get_thread_level_info(only_txt_files)
+print '''DONE Gathering thread level statistics '''
+# get_working_set(only_txt_files)
+# get_number_of_tx_per_thread
+# get_number_of_epochs_per_tx
+
+# cross_thread_conflicts ?
+# self_thread_conflicts ?

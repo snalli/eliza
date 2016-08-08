@@ -107,11 +107,12 @@ def digest(usrargs, sysargs):
 
 	n_tl = 0
 
-	# try:
+	#try:
 	for i in range(0,1):
 		for tl in os.popen(cmd, 'r', 32768): # input is global
 			
 			te = tread.get_tentry(tl)
+			
 			if te is None:
 				continue
 
@@ -180,7 +181,7 @@ def digest(usrargs, sysargs):
 						t_buf_len = 0
 	'''
 	except Exception as inst:
-
+		
 		if anlz is True:
 			for t in t_buf:
 				csvq.writerow(t)
@@ -189,9 +190,14 @@ def digest(usrargs, sysargs):
 			t_buf = []
 			t_buf_len = 0
 
+		if reuse > 0:
+			for gtid,ctxt in m_threads.items():
+				ctxt.close_thread()
+		
 		print "Failure to proceed", sys.exc_info()[0] # or inst
 		sys.exit(0)
 	'''
+	
 	if anlz is True:
 		for t in t_buf:
 			csvq.writerow(t)
@@ -199,7 +205,7 @@ def digest(usrargs, sysargs):
 		myq.flush()
 		t_buf = []
 		t_buf_len = 0
-
+	
 	myq.close()
 	if reuse > 0:
 		for gtid,ctxt in m_threads.items():
@@ -234,7 +240,8 @@ if __name__ == '__main__':
 		pmap = {}
 		shmmap = {}
 		qs = {}
-		logdir = '/scratch/' + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
+		datadir = '/nobackup/' #'/scratch/'
+		logdir = datadir + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
 		os.mkdir(logdir)
 
 		#print "Calculating number of trace entries... please wait"

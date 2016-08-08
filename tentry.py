@@ -1,7 +1,7 @@
 class tentry:
 
 					
-	c_write_ops = set(['PM_W'])
+	c_write_ops = set(['PM_W', 'PM_D'])
 	c_read_ops  = set(['PM_R'])
 	n_write_ops = set(['PM_I'])
 	flush_ops   = set(['PM_L'])
@@ -121,7 +121,7 @@ class tentry:
 		l.append(str(self.size))
 		l.append(self.callee)
 		l.append(self.caller)
-	
+		l.append(self.pc)
 		return l
 		
 	def get_tuple(self):
@@ -151,6 +151,26 @@ class tentry:
 
 	def is_movnti(self):
 		if (self.te_type in self.n_write_ops):
+			return True
+		else:
+			return False
+
+	def is_flush(self):
+		if (self.te_type in self.flush_ops):
+			return True
+		else:
+			return False
+
+	def is_tx_start(self):
+		if (self.te_type in self.tx_delims and \
+				self.te_type == 'PM_XS'):
+			return True
+		else:
+			return False
+
+	def is_tx_end(self):
+		if (self.te_type in self.tx_delims and \
+				self.te_type == 'PM_XE'):
 			return True
 		else:
 			return False
