@@ -107,8 +107,8 @@ def digest(usrargs, sysargs):
 
 	n_tl = 0
 
-	#try:
-	for i in range(0,1):
+	try:
+	# for i in range(0,1):
 		for tl in os.popen(cmd, 'r', 32768): # input is global
 			
 			te = tread.get_tentry(tl)
@@ -179,16 +179,20 @@ def digest(usrargs, sysargs):
 						myq.flush()
 						t_buf = []
 						t_buf_len = 0
-	'''
+	
 	except Exception as inst:
 		
-		if anlz is True:
-			for t in t_buf:
-				csvq.writerow(t)
-
-			myq.flush()
-			t_buf = []
-			t_buf_len = 0
+		try:
+			if anlz is True:
+				for t in t_buf:
+					csvq.writerow(t)
+		except:
+			print " "
+			
+		myq.flush()
+		myq.close()
+		t_buf = []
+		t_buf_len = 0
 
 		if reuse > 0:
 			for gtid,ctxt in m_threads.items():
@@ -196,7 +200,7 @@ def digest(usrargs, sysargs):
 		
 		print "Failure to proceed", sys.exc_info()[0] # or inst
 		sys.exit(0)
-	'''
+	
 	
 	if anlz is True:
 		for t in t_buf:
@@ -262,7 +266,7 @@ if __name__ == '__main__':
 		
 		of = logdir + '/' + str(os.path.basename(args.tfile.split('.')[0])) + '.csv'
 		for pid,p in pmap.items():
-			cmd = 'cat ' + str(qs[pid]) + ' >> ' + str(of) + ';rm -f ' + str(qs[pid])
+			cmd = 'cat ' + str(qs[pid]) + ' >> ' + str(of) #+ ';rm -f ' + str(qs[pid])
 			os.system(cmd)
 
 		''' 

@@ -375,11 +375,17 @@ def find_recent_past_ep(f, time_, time):
 		return (sno,eno)
 	else:
 		return None
-	
+
+def get_tid(f):
+	# For exim only
+	return int(f.split('.')[0].split('-')[2])
+		
 def cal_cross_thd_dep(pid, args):
 
 	logdir = args[0]
 	logfile = args[1]
+	my_pid = get_tid(logfile)
+	LIM = 10
 	global debug
 	debug = int(args[2])
 	dl = 1
@@ -408,7 +414,7 @@ def cal_cross_thd_dep(pid, args):
 	print "Worker " + str(wpid) + " analyzing " + logfile
 
 	onlyfiles = [f for f in listdir(logdir) if isfile(join(logdir, f)) and 'txt' in f]
-	
+	onlyfiles.sort()
 	# for f in onlyfiles:
 		# make_index_by_stime(logdir, f)
 		# make_index_by_etime(logdir, f)
@@ -431,13 +437,10 @@ def cal_cross_thd_dep(pid, args):
 
 	'''
 	with open(logdir + '/' + logfile, 'r') as fp:
-		#if debug > 0:
+		# if debug > 0:
 		fo = open(logdir + "/deps-" + logfile.split('.')[0] + "-" + str(lookback_time) + "-us", 'w')
 		for lno,l in enumerate(fp):
 
-			if 'PM_TX' in l:
-				continue
-				
 			progress += 1
 			if (progress % BATCH) == 0:
 				print "Worker", str(wpid),"finished",str("{:,}".format(progress))," epochs"
@@ -456,7 +459,10 @@ def cal_cross_thd_dep(pid, args):
 				print '>>>>',lno+1,stime, etime, ep_addr
 
 			for f in onlyfiles:
-
+				tmp_id = get_tid(f)
+				
+				if not((my_pid - LIM < tmp_id) and (tmp_id < my_pid + LIM)):
+					continue
 				#t = find_recent_past_ep(f, stime - lookback_time, stime)
 				# Find epochs that ended before the current epoch in the last lookback_time secs
 				t = find_recent_past_ep(f, etime - lookback_time, etime)
@@ -555,8 +561,8 @@ def cal_cross_thd_dep(pid, args):
 					ownership = "deadbeef"
 					f,ln,w = recently_touched_addr[ea][2], recently_touched_addr[ea][3], recently_touched_addr[ea][4]
 					if logfile != f:
-						my_cross = 1
 						ownership = "cross_thread"
+						my_cross += 1
 						if (f,ln,ea) not in cross_thread_deps and debug > 0:
 							cross_thread_deps.add((f,ln,ea))
 							if debug > 0: # d = 1
@@ -572,7 +578,7 @@ def cal_cross_thd_dep(pid, args):
 							n_cross += 1
 					else:
 						ownership = "self_thread"
-						my_self = 1
+						my_self += 1
 						if (f,ln,ea) not in self_thread_deps and debug > 0:
 							self_thread_deps.add((f,ln,ea))
 							if debug > 0:
@@ -657,7 +663,7 @@ cfg.read('data.ini')
 onlyfiles = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.txt' in f]
 pmap = {}
 pid = 0
-max_pid = 4
+max_pid = 16
 
 for logfile in onlyfiles:
 	'''

@@ -1,6 +1,7 @@
 from epoch import epoch
 from tentry import tentry
 import sys
+import math
 import os,csv,gzip
 from ep_stats import ep_stats
 
@@ -13,6 +14,10 @@ class tx:
 		self.__tx_start = tidargs[2]
 		self.__tx_end = 0.0
 		self.log = tidargs[3]
+		self.local_open = 0
+		if self.log is None:
+			self.local_open = 1
+		self.logfile = tidargs[5]
 		
 				
 		self.ep = None #epoch(0, 0.0)
@@ -32,6 +37,8 @@ class tx:
 
 		self.est = ep_stats()
 		self.ptype = [0,0,0,0]
+		self.data_writes = 0
+		self.meta_writes = 0
 
 
 		
@@ -44,17 +51,38 @@ class tx:
 				print hex(ecl), hex(r)
 			assert ecl == r
 
+	def log_open(self):
+		if self.local_open == 1:
+			self.log = open(self.logfile, 'a')
+					
+	def log_close(self):
+		
+		if self.local_open == 1 and self.log is not None:
+			self.log.close()
+
+	def log_write(self, s):
+		self.log_open()
+		if self.log is not None:
+			self.log.write(s)
+		self.log_close()			
+	
 	def log_start_entry(self):
+		self.log_open()
 		if self.log is not None:
 			self.log.write('{;')
-			
+		self.log_close()			
+
 	def log_end_entry(self):
+		self.log_open()
 		if self.log is not None:
 			self.log.write('}\n')
-		
+		self.log_close()		
+
 	def log_insert_entry(self, lentry):
+		self.log_open()
 		if self.log is not None:
 			self.log.write(str(lentry) + ';')
+		self.log_close()
 	
 	def do_tentry(self, te):
 		'''
@@ -86,16 +114,16 @@ class tx:
 				# No epoch number should start from 0
 				self.true_ep_count += 1
 				self.ep = epoch([self.true_ep_count, te.get_time()], 	\
-								[self.tid, self.log, self.cwrt_set, self.txid], \
+								[self.tid, self.log, self.cwrt_set, self.txid, self.logfile], \
 								self.usrargs) 
 								#self.tid, te.get_time(), log)
 				self.ep_ops = self.ep.get_ep_ops()
 				
-				#try:
-				r = self.ep_ops[te_type](te)
-				#except:
-				#	print "TXN_ERR1", te.te_list()
-				#	assert 0
+				try:
+					r = self.ep_ops[te_type](te)
+				except:
+					print "TXN_ERR1", te.te_list()
+					return None# assert 0
 				''' Size has to be greater than 0'''
 				self.sanity(te.get_addr(), te.get_size(), r)
 
@@ -107,7 +135,7 @@ class tx:
 				# TODO : Record all null epochs in a separate file ??
 				self.null_ep_count += 1
 				self.ep = epoch([self.null_ep_count, te.get_time()], \
-								[self.tid, self.log, self.cwrt_set, self.txid], \
+								[self.tid, self.log, self.cwrt_set, self.txid, self.logfile], \
 								self.usrargs) 
 				self.ep_ops = self.ep.get_ep_ops()
 				self.ep.end_epoch(te)
@@ -126,9 +154,10 @@ class tx:
 				self.prev_ep_end = te.get_time()
 				
 				self.ep.end_epoch(te)
+				
 				''' Get some stuff about the epoch '''
-				pty = self.ep.get_personality()
-				self.ptype[pty] += 1
+				self.data_writes += self.ep.get_data_writes()
+				self.meta_writes += self.ep.get_meta_writes()
 
 				ret = self.ep
 				self.ep = None
@@ -142,7 +171,7 @@ class tx:
 					r = self.ep_ops[te_type](te)
 				except:
 					print "TXN_ERR2", te.te_list()
-					sys.exit(0) #assert 0
+					return None #sys.exit(0) #assert 0
 				if(te.get_size() > 0):
 					self.sanity(te.get_addr(), te.get_size(), r)
 				
@@ -236,7 +265,8 @@ class tx:
 	
 	def tx_end(self, te):
 
-		try:
+		#try:
+		for i in range(0,1):
 			assert self.__tx_end == 0.0
 		
 			if self.ep is not None:
@@ -259,27 +289,41 @@ class tx:
 			if c > 0:
 				avg_iad = round(iad/c, 2)
 
-			t3byt2 = 0.0
-			t2byt3 = 0.0
+			'''
+			t3byt2 = 0.0 # For M, 
+			t2byt3 = 0.0 # For PMFS, N-store, Echo, Redis
 
 			if self.ptype[2] > 0:
 				t3byt2 = float(self.ptype[3]) / float(self.ptype[2])
 			if self.ptype[3] > 0:
 				t2byt3 = float(self.ptype[2]) / float(self.ptype[3])
-
+			'''
+			tot_writes = self.data_writes + self.meta_writes
+			m2d_pmfs = 0.0
+			if self.data_writes > 0:
+				# For PMFS, N-store, Echo, Redis
+				tmp = float(self.meta_writes) / float(self.data_writes)
+				m2d_pmfs = round(tmp, 2)
+			m2d_nemo = 0.0
+			if self.meta_writes > 0:
+				# For Mnemosyne
+				tmp = float(self.data_writes) / float(self.meta_writes)
+				m2d_nemo = round(tmp, 2)
 
 			le = ['PM_TX', self.__tx_start, self.__tx_end, \
 					self.true_ep_count, self.null_ep_count, avg_iad, \
-					round(t3byt2,2), round(t2byt3,2)]
+					m2d_pmfs, m2d_nemo, self.meta_writes, self.data_writes]
 			self.log_start_entry()
 			for li in le:
 				# for each list item in list entries
-				self.log.write(str(li) + ',')
-			self.log.write(';')
+				s = str(li) 
+				s += ','
+				self.log_write(s)
+			self.log_write(';')
 			self.log_end_entry()
-		except:
-			print self.tid, self.txid, self.__tx_start, self.__tx_end
-			assert False
+		#except:
+		#	print self.tid, self.txid, self.__tx_start, self.__tx_end
+		#	assert False
 
 		return None
 

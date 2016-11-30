@@ -13,10 +13,10 @@ class epoch:
 		The ~ operator doesn't work as expected 
 		~0x7 = -8 and not 0xfffffffffffffff8 !
 	'''
-	CMASK = 0xffffffffffffffc0
+	CMASK = 0xffffffffffffffc0 # Get the cache-line
 	BMASK = 0xfffffffffffffff8
 	PMASK = 0xfffffffffffff000
-	COFF  = 0x3f
+	COFF  = 0x3f # Get the offset within the cache-line
 	BOFF  = 0x7
 	POFF  = 0x0fff
 	
@@ -28,6 +28,8 @@ class epoch:
 		self.cwrt_set = {}
 		self.nwrt_set = {}
 		self.page_set = {}
+		self.md_wrt_set = {} # Metadata write-set
+		self.d_wrt_set = {}  # Data write-set
 
 		# Intra thread dep stuff
 		self.wrt_l = [] # TODO Redundant ?
@@ -39,6 +41,7 @@ class epoch:
 		# Not having type-safety is a boon
 		self.log = tidargs[1]
 		self.tl_cwrt_set = tidargs[2]
+		self.logfile = tidargs[4]
 
 		#Inter thread dep stuff
 		self.epaddr2pc = {}
@@ -55,10 +58,10 @@ class epoch:
 							  # 2 = Ctrl or Data epoch
 							  # 3 = Data or Ctrl epoch 
 		self.size = 0
-		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.write, 
-				'PM_I' : self.write, 'PM_L' : self.clflush,
+		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.cwrite, 
+				'PM_I' : self.cwrite, 'PM_L' : self.clflush,
 				'PM_XS' : self.do_nothing, 'PM_XE' : self.do_nothing,
-				'PM_C' : self.do_nothing, 'PM_D': self.write}
+				'PM_C' : self.do_nothing, 'PM_D': self.cwrite}
 				
 		self.end_ops = ['PM_N','PM_B']
 
@@ -166,6 +169,7 @@ class epoch:
 	def cwrite(self, te):
 		addr = te.get_addr()
 		size = te.get_size()
+		te_type = te.get_type()
 		self.writer = te.get_caller() + '/' + str(te.get_pc())
 		
 		s_addr = int(addr, 16)
@@ -196,6 +200,17 @@ class epoch:
 				sz = size
 				
 			try:
+				# Categorize the cache line as Data or Metadata
+				__addr = cl.get_addr()
+				if te_type == 'PM_D' or te_type == 'PM_I':
+					# For PMFS, N-store, Echo, Redis
+					self.d_wrt_set[__addr] = 1
+				elif te_type == 'PM_W':
+					self.md_wrt_set[__addr] = 1
+					# For Mnemosyne the roles are reversed
+				else:
+					assert(0)
+					
 				self.cwrite_cacheline(cl, ar, sz)
 			except:
 				print self.cwrite.__name__, ":", cl, hex(cl.get_addr()), hex(s_cl + i*self.CSIZE), hex(ar), sz
@@ -213,8 +228,9 @@ class epoch:
 		size = te.get_size()
 		
 		s_addr = int(addr, 16)
-		if(self.etype is not 'true'):
-			self.etype = 'true'
+		# Epochs with flushes alone are now null
+		#if(self.etype is not 'true'):
+		#	self.etype = 'true'
 		assert size > 0
 		assert s_addr > 0
 		return self.ecl(s_addr, size)
@@ -542,6 +558,11 @@ class epoch:
 		# Do all stat collection in the destructor routine, you have
 		# my permission to do it. But don't touch the core of the epoch
 		# code.
+		local_open = 0
+		if self.log is None:
+			self.log = open(self.logfile, 'a')
+			local_open = 1
+			
 		if self.etype == 'true' and self.log is not None:
 			# If you are going to include non-temporal stores as well,
 			# change the if condition to check for non-empty nwrt_set 
@@ -569,6 +590,9 @@ class epoch:
 
 		if self.get_cwrt_set_sz() == 1:
 			self.etype = 'singleton'
+		
+		if local_open == 1:
+			self.log.close()
 #		self.size = self.get_size()
 #		cwrt_set = self.cwrt_set
 #		nwrt_set = self.nwrt_set
@@ -656,6 +680,14 @@ class epoch:
 
 	def get_personality(self):
 		return self.personality
+		
+	def get_data_writes(self):
+		# Return the number of data bytes
+		return len(self.d_wrt_set)*self.CSIZE
+	
+	def get_meta_writes(self):
+		# Return the number of meta bytes
+		return len(self.md_wrt_set)*self.CSIZE
 		
 	def get_size(self):
 		return len(self.cwrt_set) + len(self.rd_set) + self.get_nwrt_set_sz()

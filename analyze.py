@@ -7,7 +7,7 @@ import csv
 import argparse
 import traceback
 import gc
-# import numpypy as np
+import numpy as np
 import ConfigParser
 # import matplotlib.pyplot as plt
 # from pylab import *
@@ -171,8 +171,9 @@ def classify(_map, count):
 		global stf
 		for k in sorted(_map.keys()):
 			abs_fq = _map[k]
-			rel_fq = float(round(100*abs_fq/count,2))
-			stf.write(str(k) + "		" + str("{:,}".format(abs_fq)) + "		" + str(rel_fq)+"\n")
+			rel_fq = float(round(100*float(abs_fq)/float(count),4))
+			stf.write(str(k) + "		" + str(abs_fq) + "		" + str(rel_fq)+"\n")
+			#stf.write(str(k) + "		" + str("{:,}".format(abs_fq)) + "		" + str(rel_fq)+"\n")
 
 def get_epoch_level_info(only_csv_files):
 
@@ -184,17 +185,17 @@ def get_epoch_level_info(only_csv_files):
 	global stf
 	fname = logdir + '/' + only_csv_files[0]
 
-	'''
-		t =  ((0) etype, (1) esize, (2) wsize, (3) cwsize,
-		        (4) stime, (5) etime, (6) r1, (7) r2, (8) r3 ,(9) r4, 
-		        (10) tid)
-		r1 = page_span t[6]
-		r2 = min dist between dep epochs t[7]
-		r3 = max dist between dep epochs t[8]
+	
+	#	t =  ((0) etype, (1) esize, (2) wsize, (3) cwsize,
+	#	        (4) stime, (5) etime, (6) r1, (7) r2, (8) r3 ,(9) r4, 
+	#	        (10) tid)
+	#	r1 = page_span t[6]
+	#	r2 = min dist between dep epochs t[7]
+	#	r3 = max dist between dep epochs t[8]
 
-		def cdf(arr, fname, xaxis, heading, content)
+	#	def cdf(arr, fname, xaxis, heading, content)
 
-	'''
+	
 	sz_map = {}
 	dy_map_true = {}
 	dy_map_single = {}
@@ -206,11 +207,21 @@ def get_epoch_level_info(only_csv_files):
 		for te in fp:
 			tl = te.split(',')
 			ep_type = tl[0]
+			
+			if ep_type == 'null':
+				continue
 
-			sz = float(tl[2])
+			try:
+				sz = float(tl[2])
+			except:
+				continue
 			
 			if ep_type == 'true' or ep_type == 'singleton':
-				dirty_true = float(tl[9])
+				try :
+					dirty_true = float(tl[9])
+				except:
+					print te
+					continue
 				true_ep_count += 1
 
 				if dirty_true in dy_map_true:
@@ -234,7 +245,7 @@ def get_epoch_level_info(only_csv_files):
 			count += 1
 			if (count % 1000000) == 0:
 				tot_count += 1000000
-				print "Analyzed ", str("{:,}".format(tot_count)), " epochs"
+				print "Analyzed ", tot_count,  " epochs" #str("{:,}".format(tot_count)), " epochs"
 
 		stf.write("Epoch sizes		Abs.freq.		Rel. freq.\n")
 		stf.write("=========================================================\n")
@@ -250,6 +261,9 @@ def get_epoch_level_info(only_csv_files):
 		stf.write("=========================================================\n")
 		classify(dy_map_single, singleton_count)
 		stf.write("\n\n")
+
+		stf.write("\nTotal true epochs including single " + str(true_ep_count))
+		stf.write("\n\n")
 		
 def get_thread_level_info(only_txt_files):
 	
@@ -259,6 +273,7 @@ def get_thread_level_info(only_txt_files):
 	tot_working_set = {}
 	n_tx_per_thread = {}
 	n_ep_per_tx     = {}
+	arr_n_true_ep = []
 	for f in only_txt_files:
 		fname = logdir + '/' + f
 		print "Collecting working set of", fname
@@ -270,26 +285,35 @@ def get_thread_level_info(only_txt_files):
 
 				if 'PM_TX' not in te:
 
-					l_addr = te.split(';')[1].split(',')
-					for addr in l_addr:
-						if addr not in tot_working_set:
-							tot_working_set[addr] = 0
-						tot_working_set[addr] += 1
+					try :
+						l_addr = te.split(';')[1].split(',')
+						for addr in l_addr:
+							if addr not in tot_working_set:
+								tot_working_set[addr] = 0
+							tot_working_set[addr] += 1
+					except:
+						continue
 				else:
 					tot_tx += 1
 					if f not in n_tx_per_thread:
 						n_tx_per_thread[f] = 0
 					n_tx_per_thread[f] += 1		# Count of tx in this thread
-
-					n_true_ep = te.split(',')[3] # Num of true eps in this tx
-					if n_true_ep not in n_ep_per_tx:
-						n_ep_per_tx[n_true_ep] = 0
-					n_ep_per_tx[n_true_ep] += 1
+					
+					try:
+						n_true_ep = te.split(',')[3] # Num of true eps in this tx
+						if n_true_ep not in n_ep_per_tx:
+							n_ep_per_tx[n_true_ep] = 0
+						n_ep_per_tx[n_true_ep] += 1
+						arr_n_true_ep.append(int(n_true_ep))
+					except:
+						continue
 	
 	print "Combining working sets of all threads..."
 	#for addr,freq in tot_working_set.items():
 	#	print addr, freq
-	print "Working set size ", str("{:,}".format(len(tot_working_set.keys()) * 64)), " bytes"
+	print "Working set size ", str(len(tot_working_set.keys()) * 64), " bytes"
+	stf.write("\nWorking set size " + str(len(tot_working_set.keys()) * 64) + " bytes\n")
+	#print "Working set size ", str("{:,}".format(len(tot_working_set.keys()) * 64)), " bytes"
 
 	stf.write("Thread ID		Number of Tx per thread\n")
 	stf.write("=========================================================\n")
@@ -300,6 +324,9 @@ def get_thread_level_info(only_txt_files):
 	stf.write("Ep count per tx		Abs.freq.		Rel. freq.\n")
 	stf.write("=========================================================\n")
 	classify(n_ep_per_tx, tot_tx)
+	arr_n_true_ep.sort()
+	arr = np.array(arr_n_true_ep)
+	stf.write("\n95-percentile TX sizes " + str(np.percentile(arr, 95)));
 	stf.write("\n\n")
 	
 

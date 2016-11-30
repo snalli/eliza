@@ -29,29 +29,47 @@ class smt:
 		self.logdir = sysargs[6]
 		self.tfile = self.usrargs.tfile
 		self.log = None
-		if self.usrargs.reuse > 0: #1,2,3
-			print self.logdir + '/' + str(os.path.basename(self.tfile.split('.')[0])) \
-				+ '-' + str(self.tid) + '.txt'
-			try :
+		self.local_open = 0
+		self.logfile = self.logdir + '/' + str(os.path.basename(self.tfile.split('.')[0])) + '-' + str(self.tid) + '.txt'
+		if self.usrargs.reuse > 0 and self.local_open == 0: #1,2,3
+			print self.logfile
+			#try :
+			#while self.log == None:
+			try:
 				self.log = open(self.logdir + '/' + str(os.path.basename(self.tfile.split('.')[0])) \
 					+ '-' + str(self.tid) + '.txt', 'w')
 			except:
-				# When there are too many open files, open() fails
+			# When there are too many open files, open() fails
 				self.log = None
 		else:
 			self.log = None
 			
+	def log_open(self):
+		if self.local_open == 1:
+			self.log = open(self.logfile, 'a')
+					
+	def log_close(self):
+		
+		if self.local_open == 1 and self.log is not None:
+			self.log.close()
+		
 	def log_start_entry(self):
+		self.log_open()
 		if self.log is not None:
 			self.log.write('{;')
+		self.log_close()
 			
 	def log_end_entry(self):
+		self.log_open()
 		if self.log is not None:
 			self.log.write('}\n')
+		self.log_close()
 		
 	def log_insert_entry(self, lentry):
+		self.log_open()
 		if self.log is not None:
 			self.log.write(str(lentry) + ';')
+		self.log_close()
 				
 	def do_tentry(self, te):
 		'''
@@ -78,7 +96,7 @@ class smt:
 				self.txid += 1
 				''' Create a new txn context '''
 				self.tx = tx([self.tid, self.txid, te.get_time(), 	\
-								self.log, self.cwrt_set], 			\
+								self.log, self.cwrt_set, self.logfile],	\
 								self.usrargs, self.sysargs)
 				assert self.tx is not None
 
@@ -105,11 +123,11 @@ class smt:
 				self.tx_count -= 1
 			
 			if self.tx_count == 0 and (self.tx is not None): 
-				try:
-					ret = self.tx.tx_end(te)
-				except:
-					print "THD_ERR1", te.te_list()
-					sys.exit(0)
+				#try:
+				ret = self.tx.tx_end(te)
+				#except:
+				#	print "THD_ERR1", te.te_list()
+				#	return None
 				
 				self.tx = None
 				
@@ -145,7 +163,7 @@ class smt:
 			return self.tx.do_tentry(te)
 			#except:
 			#	print "THD_ERR2", te.te_list()
-			#	sys.exit(0)			
+			#	return None# sys.exit(0)			
 									
 	def update_call_chain(self, caller, callee):
 		return self.tx.update_call_chain(caller, callee)
