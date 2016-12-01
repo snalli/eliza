@@ -4,7 +4,7 @@ class tentry:
 	c_write_ops = set(['PM_W', 'PM_D'])
 	c_read_ops  = set(['PM_R'])
 	n_write_ops = set(['PM_I'])
-	flush_ops   = set(['PM_L'])
+	flush_ops   = set(['PM_L', 'PM_O'])
 	commit_ops  = set(['PM_C'])
 	fence_ops   = set(['PM_N', 'PM_B'])
 	tx_delims   = set(['PM_XS', 'PM_XE'])

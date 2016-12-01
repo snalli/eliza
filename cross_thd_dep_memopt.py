@@ -11,7 +11,7 @@ import gc
 import bisect
 # import numpypy as np
 import ConfigParser
-import intervaltree as it
+# import intervaltree as it
 # import matplotlib.pyplot as plt
 # from pylab import *
 from collections import deque
@@ -638,7 +638,8 @@ def cal_cross_thd_dep(pid, args):
 						
 # datadir = '/dev/shm/'
 # datadir = '/scratch/'
-datadir = '/nobackup/'
+# datadir = '/nobackup/'
+datadir = '/home/snalli/Desktop/'
 colmap = {}
 colmap['etype'] = 0
 colmap['epoch_esize'] = 1

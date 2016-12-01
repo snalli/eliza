@@ -107,8 +107,8 @@ def digest(usrargs, sysargs):
 
 	n_tl = 0
 
-	try:
-	# for i in range(0,1):
+	#try:
+	for i in range(0,1):
 		for tl in os.popen(cmd, 'r', 32768): # input is global
 			
 			te = tread.get_tentry(tl)
@@ -179,7 +179,7 @@ def digest(usrargs, sysargs):
 						myq.flush()
 						t_buf = []
 						t_buf_len = 0
-	
+	'''
 	except Exception as inst:
 		
 		try:
@@ -200,7 +200,7 @@ def digest(usrargs, sysargs):
 		
 		print "Failure to proceed", sys.exc_info()[0] # or inst
 		sys.exit(0)
-	
+	'''
 	
 	if anlz is True:
 		for t in t_buf:
@@ -244,7 +244,7 @@ if __name__ == '__main__':
 		pmap = {}
 		shmmap = {}
 		qs = {}
-		datadir = '/nobackup/' #'/scratch/'
+		datadir = '/home/snalli/Desktop/' #'/scratch/'
 		logdir = datadir + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
 		os.mkdir(logdir)
 
@@ -256,7 +256,7 @@ if __name__ == '__main__':
 		for wpid in range(0, w):
 			pid = wpid # This worker's id
 			qs[pid] = '/dev/shm/' + str(os.path.basename(args.tfile.split('.')[0])) + '_' + str(pid) + '.q'
-			pmap[pid] = Process(target=digest, args=(args, [pid, [], 1000000, w, qs[pid], [-1], logdir]))
+			pmap[pid] = Process(target=digest, args=(args, [pid, [], 100000, w, qs[pid], [-1], logdir]))
 			pmap[pid].start()
 			print "Parent started worker ", pid
 		

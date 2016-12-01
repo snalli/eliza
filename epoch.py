@@ -59,7 +59,7 @@ class epoch:
 							  # 3 = Data or Ctrl epoch 
 		self.size = 0
 		self.ep_ops = {'PM_R' : self.read, 'PM_W' : self.cwrite, 
-				'PM_I' : self.cwrite, 'PM_L' : self.clflush,
+				'PM_I' : self.cwrite, 'PM_L' : self.clflush, 'PM_O' : self.clflush,
 				'PM_XS' : self.do_nothing, 'PM_XE' : self.do_nothing,
 				'PM_C' : self.do_nothing, 'PM_D': self.cwrite}
 				
