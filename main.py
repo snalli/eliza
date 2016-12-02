@@ -39,75 +39,45 @@ parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1'
 try:
 	args = parser.parse_args()
 except:
-	# parser.exit(status=0, message=parser.print_help())
 	sys.exit(0)
 
-# Objectify this
-def ping_pong(usrargs, sysargs):
-	
-	tfile = usrargs.tfile
-	gtid = sysargs[0]
-	
-	cmd = './reuse/reuse 10 ' + str("/dev/shm/." + \
-									str(os.path.basename(tfile.split('.')[0])) \
-									+ '-' + str(gtid) + '.e')
-	print cmd
-	# os.system(cmd)
-
-	
 def digest(usrargs, sysargs):
 	
-	args = usrargs
+	n_tl  = 0
+	BATCH = 100000	  # Worker emits stmt after processing BATCH entries
+	tid   = -1
+	m_threads = {} #tls
+	est   = ep_stats()
 	
-	tfile = args.tfile
-	ttype = args.ttype
-	pt = int(args.pt)
-	db = args.db
-	flow = args.flow
-	anlz = args.anlz
-	reuse = int(args.reuse)
+	# pmap[wpid] = Process(target=digest, args=(args, [wpid, [], 100000, w, None, [-1], logdir]))
+	tfile = usrargs.tfile
+	ttype = usrargs.ttype
+	pt    = int(usrargs.pt)
 
 	pid   = sysargs[0]
-	avoid = sysargs[1]
-	BATCH = sysargs[2]	# Worker emits stmt after processing BATCH entries
-	n_workers = sysargs[3]
-	myq = open(sysargs[4], 'w')
-	printl = sysargs[5] # List of host tids you want to examine, for internal use only
-	csvq = csv.writer(myq)
-	logdir = sysargs[6]
+	exclude = sysargs[1]
+	include = sysargs[5] # List of host tids you want to examine, for internal use only
 
 	if pt > 0:
-		op = open("/dev/shm/" + str(os.path.basename(tfile).split('.')[0]) + '_' + str(pid) + '.t', 'w')	
+		op = open("/dev/shm/" + \
+			str(os.path.basename(tfile).split('.')[0]) + \
+			'_' + str(pid) + '.t', 'w')	
+			
 	if ttype == 'ftrace':
-		# tread = ftread(pid, n_workers)
 		tread = ftread(usrargs, sysargs)
 	elif ttype == 'utrace':
 		tread = utread(usrargs, sysargs)
-		# sys.exit(errno.EINVAL) # for now, later tread = utread()
 
 	try:
 		if 'gz' in tfile:
 			cmd = "zcat " + tfile
-			# tf = gzip.open(tfile, 'rb')
 		else:
-			cmd = "cat " + tfile
-			tf = open(tfile, 'r')
+			print "Please provide a compressed gzipped trace file"
+			sys.exit(0)
 	except:
 		print "Unable to open ", tfile
 		sys.exit(errno.EIO)
 	
-	m_threads = {} #tls
-	m_reuse   = {} #tls
-	t_buf = []
-	t_buf_len = 0
-	t_thresh = int(BATCH/10)
-	tid = -1
-	tname = str(os.path.basename(tfile.split('.')[0]))
-	est = ep_stats()
-
-	n_tl = 0
-
-	#try:
 	for i in range(0,1):
 		for tl in os.popen(cmd, 'r', 32768): # input is global
 			
@@ -116,31 +86,29 @@ def digest(usrargs, sysargs):
 			if te is None:
 				continue
 
-			if te.get_tid() in avoid:
+			if te.get_tid() in exclude:
 				continue
 
 			n_tl += 1;
 
 			if(n_tl % BATCH == 0):
-				print "Worker ", pid, "completed ", str("{:,}".format(n_tl)) , " trace entries"
+				print "Worker ", pid, "completed ", \
+				str("{:,}".format(n_tl)) , " trace entries"
 
 			if pt > 0: # pt = 1
-				if -1 in printl:
+				if -1 in include:
 					# Write all
 					op.write(tl)
 					op.flush()
-				elif te.get_tid() in printl:
+				elif te.get_tid() in include:
 					# Write only specific tids
 					op.write(tl)
 					op.flush()
 
-			# caller = te.get_caller()
-			# callee = te.get_callee()
 			if te.get_tid() != tid:
 				tid = te.get_tid()
 				if tid not in m_threads:
 					m_threads[tid] = smt(tid, usrargs, sysargs)
-				
 				curr = m_threads[tid]			
 
 			if pt > 1: # pt = 2
@@ -152,82 +120,16 @@ def digest(usrargs, sysargs):
 		
 			ep = curr.do_tentry(te)
 			
-
 			if ep is not None:
 				if pt > 2: # pt = 3
 					op.write('ep = ' + str(ep.ep_list()) + '\n')
 					op.flush()
 
-				''' 
-					The analysis module will always return, but you
-					must decide whether to call into it or not.
-				'''
-				if anlz is True:
-					t = est.get_tuple(ep)
-
-					t_buf.append(t)
-					t_buf_len += 1
-
-					if pt > 3: # pt = 4
-						op.write('tu[' + str(t_buf_len - 1) + '] = ' + str(t_buf[t_buf_len-1]) + '\n')
-						op.flush()
-
-					if t_buf_len == t_thresh:
-						for t in t_buf:
-							csvq.writerow(t)
-
-						myq.flush()
-						t_buf = []
-						t_buf_len = 0
-	'''
-	except Exception as inst:
-		
-		try:
-			if anlz is True:
-				for t in t_buf:
-					csvq.writerow(t)
-		except:
-			print " "
-			
-		myq.flush()
-		myq.close()
-		t_buf = []
-		t_buf_len = 0
-
-		if reuse > 0:
-			for gtid,ctxt in m_threads.items():
-				ctxt.close_thread()
-		
-		print "Failure to proceed", sys.exc_info()[0] # or inst
-		sys.exit(0)
-	'''
-	
-	if anlz is True:
-		for t in t_buf:
-			csvq.writerow(t)
-
-		myq.flush()
-		t_buf = []
-		t_buf_len = 0
-	
-	myq.close()
-	if reuse > 0:
-		for gtid,ctxt in m_threads.items():
-			ctxt.close_thread()
-	'''
-	if reuse > 0:
-		# For each guest thread context
-		for gtid,ctxt in m_threads.items():
-			m_reuse[gtid] = Process(target=ping_pong, args=(usrargs, [gtid]))
-			m_reuse[gtid].start()
-		
-		for gtid,reuse_worker in m_reuse.items():
-			print "- Worker " + str(pid) + " waiting for reuse worker " + str(gtid)
-			m_reuse[gtid].join()
-	elif reuse > 1:
-		for gtid in m_threads.keys():
-			# get the epoch summaries and put them in .q file for analyze.py to process
-	'''
+				t = est.get_tuple(ep)
+				if pt > 3: # pt = 4
+					op.write('tu[' + str(t_buf_len - 1) + '] = ' \
+					+ str(t_buf[t_buf_len-1]) + '\n')
+					op.flush()
 
 if __name__ == '__main__':
 		
@@ -244,31 +146,26 @@ if __name__ == '__main__':
 		pmap = {}
 		shmmap = {}
 		qs = {}
-		datadir = '/home/snalli/Desktop/' #'/scratch/'
-		logdir = datadir + str(time.strftime("%d%b%H%M%S")).lower() + '-' + str(os.path.basename(args.tfile.split('.')[0]))
+		datadir = './results/'
+		try:
+			os.mkdir(datadir)
+		except:
+			# this will mostly fail because the dir exists
+			print ''
+		
+		logdir = datadir + str(time.strftime("%d%b%H%M%S")).lower() + \
+				'-' + str(os.path.basename(args.tfile.split('.')[0]))
 		os.mkdir(logdir)
 
-		#print "Calculating number of trace entries... please wait"
-		#cmd = "zcat " + str(args.tfile) + " | wc -l"
-		#print "$", cmd
-		#os.system(cmd)
-
 		for wpid in range(0, w):
-			pid = wpid # This worker's id
-			qs[pid] = '/dev/shm/' + str(os.path.basename(args.tfile.split('.')[0])) + '_' + str(pid) + '.q'
-			pmap[pid] = Process(target=digest, args=(args, [pid, [], 100000, w, qs[pid], [-1], logdir]))
-			pmap[pid].start()
-			print "Parent started worker ", pid
+			pmap[wpid] = Process(target=digest, args=(args, [wpid, [], 100000, w, None, [-1], logdir]))
+			pmap[wpid].start()
+			print "Parent started worker ", wpid
 		
 		for pid,p in pmap.items():
 			print "Parent waiting for worker", pid
 			p.join()
 		
-		of = logdir + '/' + str(os.path.basename(args.tfile.split('.')[0])) + '.csv'
-		for pid,p in pmap.items():
-			cmd = 'cat ' + str(qs[pid]) + ' >> ' + str(of) #+ ';rm -f ' + str(qs[pid])
-			os.system(cmd)
-
 		''' 
 			Obsolete : Analysis routines - Analysis is now performed separately
 			off the pipeline, using config files with .ini format.

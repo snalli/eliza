@@ -9,18 +9,7 @@ from ep_stats import ep_stats
 class tx:
 	def __init__(self, tidargs, usrargs, sysargs):
 
-		self.tid = tidargs[0]
-		self.txid = tidargs[1]
-		self.__tx_start = tidargs[2]
-		self.__tx_end = 0.0
-		self.log = tidargs[3]
-		self.local_open = 0
-		if self.log is None:
-			self.local_open = 1
-		self.logfile = tidargs[5]
-		
-				
-		self.ep = None #epoch(0, 0.0)
+		self.ep     = None #epoch(0, 0.0)
 		self.ep_ops = None #self.ep.get_ep_ops()
 		self.true_ep_count = 0 # Count of true epochs
 		self.null_ep_count = 0 # Count of null epochs
@@ -29,8 +18,15 @@ class tx:
 		self.inter_arrival_duration = 0
 		self.prev_ep_end = 0
 
-		self.ppid = sysargs[0]
-		self.logdir = sysargs[6]
+		self.tid  = tidargs[0]
+		self.txid = tidargs[1]
+		self.__tx_start = tidargs[2]
+		self.__tx_end   = 0.0
+		self.logfile = tidargs[5]
+		self.log = None
+		
+		self.ppid   = sysargs[0] # ?
+		self.logdir = sysargs[6] # ?
 
 		self.usrargs = usrargs
 		self.flow = self.usrargs.flow
@@ -52,13 +48,13 @@ class tx:
 			assert ecl == r
 
 	def log_open(self):
-		if self.local_open == 1:
+		while self.log is None:
 			self.log = open(self.logfile, 'a')
 					
 	def log_close(self):
-		
-		if self.local_open == 1 and self.log is not None:
+		if self.log is not None:
 			self.log.close()
+		self.log = None
 
 	def log_write(self, s):
 		self.log_open()
@@ -85,16 +81,7 @@ class tx:
 		self.log_close()
 	
 	def do_tentry(self, te):
-		'''
-			A thread can receive a compound operation or a simple
-			operation. A compound operation is an operation on a range of
-			memory specified by the starting address of the range, the size
-			of the range and the type of operation. The types can be
-			read, write, movnti or clflush.
-			
-			A simple operation is an operation on a 8-byte or 64-bit range.
-			Mulitple consecutive simple operations form a compound operation.
-		'''
+
 		assert te.is_valid() is True
 		
 		ret = None
@@ -104,17 +91,16 @@ class tx:
 		
 		if self.ep is None: 
 			if te.is_write():
-				# The beginning of a new epoch
-				self.log_start_entry()
+				''' The beginning of a new epoch '''
 				if self.prev_ep_end > 0:
 					assert self.true_ep_count > 0
-					self.inter_arrival_duration += te.get_time() - 		\
+					self.inter_arrival_duration += te.get_time() - 	\
 													self.prev_ep_end
 													
-				# No epoch number should start from 0
+				''' No epoch number should start from 0 '''
 				self.true_ep_count += 1
 				self.ep = epoch([self.true_ep_count, te.get_time()], 	\
-								[self.tid, self.log, self.cwrt_set, self.txid, self.logfile], \
+								[self.tid, None, self.cwrt_set, self.txid, self.logfile], \
 								self.usrargs) 
 								#self.tid, te.get_time(), log)
 				self.ep_ops = self.ep.get_ep_ops()
@@ -133,6 +119,8 @@ class tx:
 				# Null epoch
 				# No epoch number should start from 0
 				# TODO : Record all null epochs in a separate file ??
+				ret = None
+				'''
 				self.null_ep_count += 1
 				self.ep = epoch([self.null_ep_count, te.get_time()], \
 								[self.tid, self.log, self.cwrt_set, self.txid, self.logfile], \
@@ -143,6 +131,7 @@ class tx:
 				ret = self.ep
 				self.ep = None
 				self.ep_ops = None
+				'''
 				# We don't care about null epochs for now
 				# self.log_start_entry()
 				# self.log_insert_entry(est.get_str(ret))
@@ -159,12 +148,16 @@ class tx:
 				self.data_writes += self.ep.get_data_writes()
 				self.meta_writes += self.ep.get_meta_writes()
 
+				# Cannot delegate this to the epoch
+				self.log_start_entry()
+				for e in self.ep.get_info():
+					self.log_insert_entry(e)
+				self.log_insert_entry(est.get_str(self.ep))
+				self.log_end_entry()
+
 				ret = self.ep
 				self.ep = None
 				self.ep_ops = None
-
-				self.log_insert_entry(est.get_str(ret))
-				self.log_end_entry()
 
 			else:
 				try:	

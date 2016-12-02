@@ -4,6 +4,8 @@ tmp*
 *.txt
 *vmlinux*
 gz/
+results/
+trace/
 db/
 txt/
 stat/

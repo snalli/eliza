@@ -22,6 +22,8 @@ class epoch:
 	
 	def __init__(self, epargs, tidargs, usrargs):
 
+		# epargs = [self.true_ep_count, te.get_time()]
+		# tidargs = [self.tid, None, self.cwrt_set, self.txid, self.logfile]
 		# Original members
 		self.prev_wrt_addr = -1
 		self.rd_set = {}
@@ -29,7 +31,8 @@ class epoch:
 		self.nwrt_set = {}
 		self.page_set = {}
 		self.md_wrt_set = {} # Metadata write-set
-		self.d_wrt_set = {}  # Data write-set
+		self.d_wrt_set  = {}  # Data write-set
+		self.ep_info = []
 
 		# Intra thread dep stuff
 		self.wrt_l = [] # TODO Redundant ?
@@ -39,9 +42,8 @@ class epoch:
 		self.least_recent_dep = self.eid
 		self.dep_track = int(usrargs.reuse)
 		# Not having type-safety is a boon
-		self.log = tidargs[1]
 		self.tl_cwrt_set = tidargs[2]
-		self.logfile = tidargs[4]
+
 
 		#Inter thread dep stuff
 		self.epaddr2pc = {}
@@ -77,6 +79,9 @@ class epoch:
 		#        stime, etime, r1, r2, r3 ,r4, tid)
 
 		return [self.tid, self.end_time, self.etype, esize, wsize, cwsize, self.start_time]
+	
+	def get_info(self):
+		return self.ep_info
 
 	def reset(self):
 		# Obsolete, do not use
@@ -342,32 +347,6 @@ class epoch:
 		return 0
 
 	''' Stage 2 '''
-	def logger(self, cl_addr):
-		''' 
-			We don't write to the log here since writing to an
-			external file on every access is slower than buffering it
-			in memory and writing back in batches later.
-			
-			But we still do check to see if the logfile handler is non-null,
-			to decide if we want to cache the order of addresses accessed
-			by the epoch.
-			
-			The write requests are completed in two stages. In the first stage,
-			the write requests is converted into a list of one or more 
-			cache-aligned addresses. These addresses are then issued one by one
-			to the second stage that checks for ownership and dependencies with
-			previous epochs. The stage two is unaware of whether the request to
-			access an cl-addr was internal or external.
-		'''
-		if self.log is not None:
-			if cl_addr != self.prev_wrt_addr:
-				self.prev_wrt_addr = cl_addr
-				self.wrt_l.append(self.prev_wrt_addr)
-			# else you can count how many times was the same address written
-			# to. but beware, the count can be a side-effect of your
-			# instrumentation or measurement
-
-	
 	def get_dist_from_mrd(self):
 		'''
 			This "if" checks if an epoch has had any 
@@ -454,7 +433,6 @@ class epoch:
 		assert (__addr & self.COFF == 0)
 		assert sz > 0
 		assert (ar & self.CMASK) == __addr
-		# self.logger(cl.get_addr())
 		
 		# Refer to state diagram
 		if __addr in self.rd_set:
@@ -498,7 +476,6 @@ class epoch:
 		owner = False
 		__addr = cl.get_addr()
 		assert (__addr & self.COFF == 0)
-		# self.logger(cl.get_addr())
 		
 		# Refer to state diagram
 		if __addr in self.rd_set:
@@ -526,11 +503,13 @@ class epoch:
 		assert (self.etype in self.epoch_types) and (self.etype == 'true')
 		
 	def end_epoch(self, te):
+
 		assert self.etype in self.epoch_types
+
 		end_time = te.get_time()
 		assert end_time >= self.start_time
-
 		self.end_time = end_time
+
 		''' 
 			Calculate page span here.
 			It could have been done in the nwrite and cwrite routines
@@ -547,6 +526,9 @@ class epoch:
 			self.page_set[k & self.PMASK] = 0
 			
 		self.page_span = len(self.page_set)
+
+		if self.get_cwrt_set_sz() == 1:
+			self.etype = 'singleton'
 		
 		# return the string of accesses inside this epoch here
 		# or simply dump the list in a file and invoke Rathijit's
@@ -557,42 +539,49 @@ class epoch:
 		# reuse within threads can show us cascades !
 		# Do all stat collection in the destructor routine, you have
 		# my permission to do it. But don't touch the core of the epoch
-		# code.
+		# code !!
+		''' 
 		local_open = 0
 		if self.log is None:
 			self.log = open(self.logfile, 'a')
 			local_open = 1
-			
-		if self.etype == 'true' and self.log is not None:
+		'''
+
+		if self.etype == 'true':
 			# If you are going to include non-temporal stores as well,
 			# change the if condition to check for non-empty nwrt_set 
 			# PS : It suffices to check if the epoch is true or null
+			''' The list of addresses written by the epoch '''
 			tmp_l = sorted(list(self.merge_sets(self.cwrt_set, self.nwrt_set)))
 			first_entry = True
+			ep_info = ''
 			# It is not enuf just to check prev_addr ! Consider aaabbcca --> (a,b,c,a)!
 			for addr in tmp_l:#set(self.wrt_l): # You can merge the two write sets here ?!
 				if first_entry is True:
 					first_entry = False
 				else:
-					self.log.write(',')
-				self.log.write(str(hex(addr)));
-			self.log.write(';');
+					ep_info += ',' #self.log.write(',')
+				ep_info += str(hex(addr)) #self.log.write(str(hex(addr)));
 
-			
+			self.ep_info.append(ep_info)# self.log_insert_entry(epstr)#self.log.write(';');
+
+			''' The list of PC's that wrote to the above addresses '''
 			first_entry = True
+			ep_info = ''
 			for addr in tmp_l:
 				if first_entry is True:
 					first_entry = False
 				else:
-					self.log.write(',')
-				self.log.write(self.epaddr2pc[addr]);
-			self.log.write(';');
+					ep_info += ',' #self.log.write(',')
+				ep_info += self.epaddr2pc[addr] #self.log.write(self.epaddr2pc[addr]);
 
-		if self.get_cwrt_set_sz() == 1:
-			self.etype = 'singleton'
-		
-		if local_open == 1:
-			self.log.close()
+			self.ep_info.append(ep_info)#self.log_insert_entry(epstr)#self.log.write(';');
+
+		''' Some metainfo about the epoch'''
+		#self.log_insert_entry(est.get_str(self))
+
+		#if local_open == 1:
+		#	self.log.close()
 #		self.size = self.get_size()
 #		cwrt_set = self.cwrt_set
 #		nwrt_set = self.nwrt_set
