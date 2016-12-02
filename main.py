@@ -166,6 +166,8 @@ if __name__ == '__main__':
 			print "Parent waiting for worker", pid
 			p.join()
 		
+		''' Put the analysis module here '''
+		''' Put the dependency checker here '''
 		''' 
 			Obsolete : Analysis routines - Analysis is now performed separately
 			off the pipeline, using config files with .ini format.

@@ -9,8 +9,8 @@ from ep_stats import ep_stats
 class tx:
 	def __init__(self, tidargs, usrargs, sysargs):
 
-		self.ep     = None #epoch(0, 0.0)
-		self.ep_ops = None #self.ep.get_ep_ops()
+		self.ep     = None 
+		self.ep_ops = None 
 		self.true_ep_count = 0 # Count of true epochs
 		self.null_ep_count = 0 # Count of null epochs
 		self.cwrt_set = {} # ?
@@ -114,28 +114,6 @@ class tx:
 				self.sanity(te.get_addr(), te.get_size(), r)
 
 				assert self.ep.is_true()
-				
-			elif te.is_fence():
-				# Null epoch
-				# No epoch number should start from 0
-				# TODO : Record all null epochs in a separate file ??
-				ret = None
-				'''
-				self.null_ep_count += 1
-				self.ep = epoch([self.null_ep_count, te.get_time()], \
-								[self.tid, self.log, self.cwrt_set, self.txid, self.logfile], \
-								self.usrargs) 
-				self.ep_ops = self.ep.get_ep_ops()
-				self.ep.end_epoch(te)
-
-				ret = self.ep
-				self.ep = None
-				self.ep_ops = None
-				'''
-				# We don't care about null epochs for now
-				# self.log_start_entry()
-				# self.log_insert_entry(est.get_str(ret))
-				# self.log_end_entry()
 		else: 
 			# True epoch
 			if te.is_fence():

@@ -20,17 +20,15 @@ debugl = ['1','2','3','4']
 parser = argparse.ArgumentParser(prog="eliza", description="A tool to analyze epochs")
 parser.add_argument('-p', '--print', dest='pt', action='store_true', default=False, help="Print trace")
 parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.1', help="Display version and quit")
-parser.add_argument('-r', dest='logdir', help="Log directory containing per-thread epoch logs and summary")
+parser.add_argument('-r', dest='result_dir', help="Result directory in results/ containing per-thread traces")
 
-datadir = '/scratch/'
-datadir = '/nobackup/'
 try:
 	args = parser.parse_args()
 except:
-	parser.exit(status=0, message=parser.print_help())
+	#parser.exit(status=0, message=parser.print_help())
 	sys.exit(0)
 
-logdir = datadir + args.logdir
+logdir = 'results/' + args.result_dir
 
 stf = 0
 try:
@@ -175,7 +173,7 @@ def classify(_map, count):
 			stf.write(str(k) + "		" + str(abs_fq) + "		" + str(rel_fq)+"\n")
 			#stf.write(str(k) + "		" + str("{:,}".format(abs_fq)) + "		" + str(rel_fq)+"\n")
 
-def get_epoch_level_info(only_csv_files):
+def get_epoch_level_info(only_txt_files):
 
 	# get_size_distribution(only_csv_files)
 	# get_dirty_byte_distribution_true
@@ -183,8 +181,6 @@ def get_epoch_level_info(only_csv_files):
 
 	global logdir
 	global stf
-	fname = logdir + '/' + only_csv_files[0]
-
 	
 	#	t =  ((0) etype, (1) esize, (2) wsize, (3) cwsize,
 	#	        (4) stime, (5) etime, (6) r1, (7) r2, (8) r3 ,(9) r4, 
@@ -203,67 +199,77 @@ def get_epoch_level_info(only_csv_files):
 	tot_count = 0
 	true_ep_count = 0
 	singleton_count = 0
-	with open(fname, 'r') as fp:
-		for te in fp:
-			tl = te.split(',')
-			ep_type = tl[0]
-			
-			if ep_type == 'null':
-				continue
+	for f in only_txt_files:
+		fname = logdir + '/' + f
+		print "Collecting epoch-level info of", fname
 
-			try:
-				sz = float(tl[2])
-			except:
-				continue
-			
-			if ep_type == 'true' or ep_type == 'singleton':
-				try :
-					dirty_true = float(tl[9])
-				except:
-					print te
+		with open(fname, 'r') as fp:
+			for te in fp:
+
+				if 'PM_TX' in te:
 					continue
-				true_ep_count += 1
+					
+				ts = te.split(';')[3]
+				tl = ts.split(',')
+				ep_type = tl[0]
+			
+				if ep_type == 'null':
+					continue
 
-				if dirty_true in dy_map_true:
-					dy_map_true[dirty_true] += 1
-				else:
-					dy_map_true[dirty_true] = 1
-	
-				if ep_type == 'singleton':
-					dirty_single = dirty_true
-					singleton_count += 1
-					if dirty_single in dy_map_single:
-						dy_map_single[dirty_single] += 1
+				try:
+					sz = float(tl[2])
+				except:
+					continue
+			
+				if ep_type == 'true' or ep_type == 'singleton':
+					try :
+						dirty_true = float(tl[9])
+					except:
+						print te, ep_type
+						continue
+					true_ep_count += 1
+
+					if dirty_true in dy_map_true:
+						dy_map_true[dirty_true] += 1
 					else:
-						dy_map_single[dirty_single] = 1
+						dy_map_true[dirty_true] = 1
+	
+					if ep_type == 'singleton':
+						dirty_single = dirty_true
+						singleton_count += 1
+						if dirty_single in dy_map_single:
+							dy_map_single[dirty_single] += 1
+						else:
+							dy_map_single[dirty_single] = 1
 
-			if sz in sz_map:
-				sz_map[sz] += 1
-			else:
-				sz_map[sz] = 1
+				if sz in sz_map:
+					sz_map[sz] += 1
+				else:
+					sz_map[sz] = 1
 				
-			count += 1
-			if (count % 1000000) == 0:
-				tot_count += 1000000
-				print "Analyzed ", tot_count,  " epochs" #str("{:,}".format(tot_count)), " epochs"
+				count += 1
+				if (count % 1000000) == 0:
+					tot_count += 1000000
+					print "Analyzed ", tot_count,  " epochs" #str("{:,}".format(tot_count)), " epochs"
 
-		stf.write("Epoch sizes		Abs.freq.		Rel. freq.\n")
-		stf.write("=========================================================\n")
-		classify(sz_map, count)
-		stf.write("\n\n")
+		
+	stf.write("Epoch sizes		Abs.freq.		Rel. freq.\n")
+	stf.write("=========================================================\n")
+	classify(sz_map, count)
+	stf.write("\n\n")
 
-		stf.write("True Epoch dirty		Abs.freq.		Rel. freq.\n")
-		stf.write("=========================================================\n")
-		classify(dy_map_true, true_ep_count)
-		stf.write("\n\n")
+	stf.write("True Epoch dirty		Abs.freq.		Rel. freq.\n")
+	stf.write("=========================================================\n")
+	classify(dy_map_true, true_ep_count)
+	stf.write("\n\n")
 				
-		stf.write("Singleton dirty		Abs.freq.		Rel. freq.\n")
-		stf.write("=========================================================\n")
-		classify(dy_map_single, singleton_count)
-		stf.write("\n\n")
+	stf.write("Singleton dirty		Abs.freq.		Rel. freq.\n")
+	stf.write("=========================================================\n")
+	classify(dy_map_single, singleton_count)
+	stf.write("\n\n")
 
-		stf.write("\nTotal true epochs including single " + str(true_ep_count))
-		stf.write("\n\n")
+	stf.write("\nTotal true epochs including single " + str(true_ep_count))
+	stf.write("\n\n")
 		
 def get_thread_level_info(only_txt_files):
 	
@@ -331,9 +337,8 @@ def get_thread_level_info(only_txt_files):
 	
 
 print '''Gathering epoch level statistics '''
-only_csv_files = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.csv' in f]
-assert len(only_csv_files) == 1
-get_epoch_level_info(only_csv_files)
+only_txt_files = [f for f in listdir(logdir) if isfile(join(logdir, f)) and '.txt' in f]
+get_epoch_level_info(only_txt_files)
 print '''DONE Gathering epoch level statistics '''
 
 print '''Gathering thread level statistics '''

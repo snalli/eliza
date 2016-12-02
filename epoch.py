@@ -547,7 +547,7 @@ class epoch:
 			local_open = 1
 		'''
 
-		if self.etype == 'true':
+		if self.etype is not 'null' and self.etype is not 'rd-only':
 			# If you are going to include non-temporal stores as well,
 			# change the if condition to check for non-empty nwrt_set 
 			# PS : It suffices to check if the epoch is true or null
