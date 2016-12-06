@@ -78,7 +78,8 @@ def digest(usrargs, sysargs):
 		print "Unable to open ", tfile
 		sys.exit(errno.EIO)
 	
-	for i in range(0,1):
+
+	try: #for i in range(0,1):
 		for tl in os.popen(cmd, 'r', 32768): # input is global
 			
 			te = tread.get_tentry(tl)
@@ -119,7 +120,7 @@ def digest(usrargs, sysargs):
 			# curr.update_call_chain(caller, callee)
 		
 			ep = curr.do_tentry(te)
-			
+
 			if ep is not None:
 				if pt > 2: # pt = 3
 					op.write('ep = ' + str(ep.ep_list()) + '\n')
@@ -130,6 +131,8 @@ def digest(usrargs, sysargs):
 					op.write('tu[' + str(t_buf_len - 1) + '] = ' \
 					+ str(t_buf[t_buf_len-1]) + '\n')
 					op.flush()
+	except:
+		sys.exit(0)
 
 if __name__ == '__main__':
 		
@@ -153,12 +156,16 @@ if __name__ == '__main__':
 			# this will mostly fail because the dir exists
 			print ''
 		
-		logdir = datadir + str(time.strftime("%d%b%H%M%S")).lower() + \
+		resdir = str(time.strftime("%d%b%H%M%S")).lower() + \
 				'-' + str(os.path.basename(args.tfile.split('.')[0]))
+
+		logdir = datadir + resdir
+
 		os.mkdir(logdir)
 
 		for wpid in range(0, w):
-			pmap[wpid] = Process(target=digest, args=(args, [wpid, [], 100000, w, None, [-1], logdir]))
+			pmap[wpid] = Process(target=digest, args=(args, [wpid, [], \
+										100000, w, None, [-1], logdir]))
 			pmap[wpid].start()
 			print "Parent started worker ", wpid
 		
@@ -166,15 +173,22 @@ if __name__ == '__main__':
 			print "Parent waiting for worker", pid
 			p.join()
 		
-		''' Put the analysis module here '''
-		''' Put the dependency checker here '''
-		''' 
-			Obsolete : Analysis routines - Analysis is now performed separately
-			off the pipeline, using config files with .ini format.
-		'''
+
 		if args.anlz is True:
-			cmd = 'mypy analyze.py -f ' + str(args.tfile) + ' -w' + str(w)
-			# os.system(cmd)
+			''' Put the analysis module here '''
+			cmd = 'python analyze.py -r ' + str(resdir)
+			os.system(cmd)
+			
+			''' Put the dependency checker here '''
+			cmd = 'pypy cross_thd_dep_memopt.py -t 5 -r ' + str(resdir)
+			os.system(cmd)
+
+			cmd = 'pypy cross_thd_dep_memopt.py -t 20 -r ' + str(resdir)
+			os.system(cmd)
+
+			cmd = 'pypy cross_thd_dep_memopt.py -t 50 -r ' + str(resdir)
+			os.system(cmd)
+
 		else:
 			print "No analysis performed"
 		

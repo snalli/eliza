@@ -223,7 +223,7 @@ def get_epoch_level_info(only_txt_files):
 			
 				if ep_type == 'true' or ep_type == 'singleton':
 					try :
-						dirty_true = float(tl[9])
+						dirty_true = float(tl[8])
 					except:
 						print te, ep_type
 						continue
@@ -268,7 +268,7 @@ def get_epoch_level_info(only_txt_files):
 	classify(dy_map_single, singleton_count)
 	stf.write("\n\n")
 
-	stf.write("\nTotal true epochs including single " + str(true_ep_count))
+	stf.write("\nTotal true epochs including singletons " + str(true_ep_count))
 	stf.write("\n\n")
 		
 def get_thread_level_info(only_txt_files):

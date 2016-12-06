@@ -27,6 +27,7 @@ class cacheline:
 		# return 
 		dl = []
 		if not (hex(ar & self.CMASK) == hex(self.addr & self.CMASK)):
+			# The addr doesn't belong to this cache line !
 			print self.dirty_bytes.__name__, ': <', hex(ar), '/', hex(ar & self.CMASK), 'in', hex(self.addr), sz, '>'
 			assert hex(ar & self.CMASK) == hex(self.addr & self.CMASK)
 		for i in range(0, sz):
@@ -37,7 +38,7 @@ class cacheline:
 				print self.dirty_bytes.__name__, ': <', hex(ar), '/', hex(ar & self.CMASK), 'in', hex(self.addr), sz, '>', dl
 				assert -1 < (ar - self.addr) and (ar - self.addr) < 64
 			self.dbytes.add(ar - self.addr)
-			ar += 1 # Increment address by 1, not by i else you get (ar+1), (ar+1)+2, ((ar+1)+2)+3
+			ar += 1 # Increment address by 1, not by i else you get (ar+1), (ar+1)+2, ((ar+1)+2)+3 --> GOOD OBSERVATION !
 			dl.append((hex(ar),i))
 	
 	def get_dirty_nbytes(self):

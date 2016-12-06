@@ -73,7 +73,7 @@ class ep_stats:
 		return  str(etype) + ',' + str(esize) + ','  + str(wsize) + ',' \
 				+ str(stime) + ',' + str(etime) + ',' \
 				+ str(r1) + ',' + str(r2) + ',' + str(r3) + ',' + str(r4) + ',' \
-
+		''' r4 is the fraction of dirty bytes in an epoch '''
 
 
 		#return  str(etype) + ',' + str(esize) + ','  + str(wsize) + ','  \

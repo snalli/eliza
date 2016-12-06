@@ -158,7 +158,9 @@ def make_lnmap(logdir, f):
 	fp.close()
 	'''
 		The structure here is ass follows :
-		f -> lno_to_lines_map -> line num -> [[list of NVM addrs] <0>, (tuple of time stamps)<1>, [list of writers]<2>]
+		f -> lno_to_lines_map -> line num -> [[list of NVM addrs] <0>, 
+											(tuple of time stamps)<1>, 
+											[list of writers]<2>]
 	'''
 	f_to_lnnums_m[f] = lno_to_lines_m
 	
@@ -184,11 +186,10 @@ def find_recent_past_ep_etime_helper(f, time_, time):
 	'''
 		read the file to populate a sequence of epochs that falls between
 		time_ and time.
-			- Eliminate epochs from the start of the sequence that do not fall 
-			  in the time interval. Update the HT.
+			- Eliminate epochs from the start of the sequence that do
+			  not fall in the time interval. Update the HT.
 			- Append epochs that fall in the time interval. Update the HT.
 		If EOF, return None.
-
 	'''
 	dl = 2
 	global debug
@@ -344,11 +345,11 @@ def find_recent_past_ep(f, time_, time):
 	'''
 		Note : As a result of this really excellent coding (no sarcasm),
 		some epochs are being dropped. For example, an epoch that ends in
-		the last t secs but doesn't start in the last t secs will never get a
-		chance to be part of the most_recent_epochs group. 
+		the last t secs but doesn't start in the last t secs will never 
+		get a chance to be part of the most_recent_epochs group. 
 		So just return all the epochs that *ended* in the last t secs and 
-		as a result, one of the assertions in the main routine needs to be
-		disabled.
+		as a result, one of the assertions in the main routine needs to
+		be disabled.
 	'''
 	return (sno_et, eno_et)
 	''' 
@@ -432,7 +433,7 @@ def cal_cross_thd_dep(pid, args):
 	'''
 	with open(logdir + '/' + logfile, 'r') as fp:
 		#if debug > 0:
-		fo = open(logdir + "/deps-" + logfile.split('.')[0] + "-" + str(lookback_time) + "-us", 'w')
+		fo = open(logdir + "/deps-" + logfile.split('.')[0] + "-" + str(lookback_time) + "-us.txt", 'w')
 		for lno,l in enumerate(fp):
 
 			if 'PM_TX' in l:
@@ -639,7 +640,7 @@ def cal_cross_thd_dep(pid, args):
 # datadir = '/dev/shm/'
 # datadir = '/scratch/'
 # datadir = '/nobackup/'
-datadir = '/home/snalli/Desktop/'
+datadir = 'results/'
 colmap = {}
 colmap['etype'] = 0
 colmap['epoch_esize'] = 1

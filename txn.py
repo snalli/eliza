@@ -50,6 +50,7 @@ class tx:
 	def log_open(self):
 		while self.log is None:
 			self.log = open(self.logfile, 'a')
+
 					
 	def log_close(self):
 		if self.log is not None:
@@ -83,7 +84,7 @@ class tx:
 	def do_tentry(self, te):
 
 		assert te.is_valid() is True
-		
+
 		ret = None
 		te_type = te.get_type()
 		log = self.log

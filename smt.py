@@ -40,7 +40,7 @@ class smt:
 		'''
 		assert te.is_valid() is True
 		te_type = te.get_type()
-		
+
 		if te.is_tx_start():
 			
 			''' We flatten any nested transactions '''
