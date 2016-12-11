@@ -3,6 +3,9 @@ import sys
 class ftread:
 	
 	delim = ':'
+	psegment_start = 0x100000000000
+	psegment_size  = 0x10000000000
+	psegment_end   = psegment_start + psegment_size
 	
 	def __init__(self, usrargs, sysargs):
 		self.pid = sysargs[0]
@@ -28,6 +31,7 @@ class ftread:
 	def get_tentry(self, tl):
 		assert tl is not None
 		te = tentry()
+		kernelmode = 1 # Assume kernel trace entry
 
 		''' Are there any trace entries to be avoided ? '''
 		if self.nti is False:
@@ -73,10 +77,27 @@ class ftread:
 			tmp_time = l[3].split(':')[0].split('.')
 			te.set_time(int(tmp_time[0])*1000000 + int(tmp_time[1]))
 			te.set_callee('null')
-			te.set_caller(l[4].split(':')[0])
+			
+			caller = l[4].split(':')[0]
+			if caller is 'tracing_mark_write':
+				''' This is user mode trace entry '''
+				kernelmode = 0
+				caller = l[4][::-1].split(':')[1][::-1]
+
+			te.set_caller(caller)
 			
 			if te.need_arg():
+
 				__l = l[5].split(':')	
+				if kernelmode == 0:
+					''' All usermode PM accesses must be within this 
+					    range since we map PM at psegment_start.
+					'''
+					if not (self.psegment_start <= int(__l[1],16) and \
+							int(__l[1],16) <= self.psegment_end):
+						del te
+						return None
+
 				te.set_addr(__l[1])
 				te.set_size(int(__l[2]))
 

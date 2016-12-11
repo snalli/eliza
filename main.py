@@ -180,14 +180,12 @@ if __name__ == '__main__':
 			os.system(cmd)
 			
 			''' Put the dependency checker here '''
-			cmd = 'pypy cross_thd_dep_memopt.py -t 5 -r ' + str(resdir)
-			os.system(cmd)
-
-			cmd = 'pypy cross_thd_dep_memopt.py -t 20 -r ' + str(resdir)
-			os.system(cmd)
-
-			cmd = 'pypy cross_thd_dep_memopt.py -t 50 -r ' + str(resdir)
-			os.system(cmd)
+			if 'exim' in args.tfile:
+				cmd = 'pypy cross_for_exim.py -t 50 -d 1 -r ' + str(resdir)
+				os.system(cmd)
+			else:
+				cmd = 'pypy cross_thd_dep_memopt.py -t 50 -d 1 -r ' + str(resdir)
+				os.system(cmd)
 
 		else:
 			print "No analysis performed"

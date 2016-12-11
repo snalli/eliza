@@ -433,7 +433,7 @@ def cal_cross_thd_dep(pid, args):
 	'''
 	with open(logdir + '/' + logfile, 'r') as fp:
 		#if debug > 0:
-		fo = open(logdir + "/deps-" + logfile.split('.')[0] + "-" + str(lookback_time) + "-us.txt", 'w')
+		fo = open(logdir + "/deps-" + logfile.split('.')[0] + "-" + str(lookback_time) + "-us", 'w')
 		for lno,l in enumerate(fp):
 
 			if 'PM_TX' in l:
@@ -589,16 +589,20 @@ def cal_cross_thd_dep(pid, args):
 									self_thread_deps_short[tstr] += 1
 								else:
 									self_thread_deps_short[tstr] = 1
-							n_self += 1
+							n_self += 1 # This is the count of how many addresses
+										# an epoch has in common with previous epochs
+										# on the same thread
 
 			recently_touched_addr = {} # Not needed if we do time-intv check above b1, b0
 			if my_self == 1:
-				total_self += 1
+				total_self += 1 # This is a count of number of epochs that have at least
+								# one address in common with some past epoch on the same
+								# thread in 50 us
 			if my_cross == 1:
 				total_cross += 1
 				
-			my_self = 0
-			my_cross = 0
+			my_self = 0 # needed ?
+			my_cross = 0 # needed ?
 
 						# fantastic code, excellent use of data structures
 						# excellent use of bisect algo, python tuple comparison features
@@ -631,8 +635,8 @@ def cal_cross_thd_dep(pid, args):
 	# Report this. This is what we want.
 	print logfile, "(CROS_EPOS) total_cross =", total_cross #, sorted(list(cross_dep_addrs)) # Printed to screen
 	print logfile, "(SELF_EPOS) total_self  =", total_self #, sorted(list(cross_dep_addrs))   # Printed to screen
-	fo.write("\n\n TOTAL_CROS_EPS = " + str(total_cross))
-	fo.write("\n\n TOTAL_SELF_EPS = " + str(total_self))
+	fo.write("\n\n TOTAL_CROS_EPOS = " + str(total_cross))
+	fo.write("\n\n TOTAL_SELF_EPOS = " + str(total_self))
 
 	print "Worker", str(wpid),"finished",str("{:,}".format(progress))," epochs"
 	fo.close()

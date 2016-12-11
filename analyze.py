@@ -208,7 +208,12 @@ def get_epoch_level_info(only_txt_files):
 
 				if 'PM_TX' in te:
 					continue
-					
+				
+				if '{' not in te or '}' not in te:
+					# Some trace entries (te) may be incomplete due
+					# to interrupts
+					continue
+
 				ts = te.split(';')[3]
 				tl = ts.split(',')
 				ep_type = tl[0]

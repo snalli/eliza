@@ -11,7 +11,7 @@ import gc
 import bisect
 # import numpypy as np
 import ConfigParser
-import intervaltree as it
+# import intervaltree as it
 # import matplotlib.pyplot as plt
 # from pylab import *
 from collections import deque
@@ -636,15 +636,17 @@ def cal_cross_thd_dep(pid, args):
 	# Report this. This is what we want.
 	print logfile, "(CROS_EPOS) total_cross =", total_cross #, sorted(list(cross_dep_addrs)) # Printed to screen
 	print logfile, "(SELF_EPOS) total_self  =", total_self #, sorted(list(cross_dep_addrs))   # Printed to screen
-	fo.write("\n\n TOTAL_CROS_EPS = " + str(total_cross))
-	fo.write("\n\n TOTAL_SELF_EPS = " + str(total_self))
+	fo.write("\n\n TOTAL_CROS_EPOS = " + str(total_cross))
+	fo.write("\n\n TOTAL_SELF_EPOS = " + str(total_self))
 
 	print "Worker", str(wpid),"finished",str("{:,}".format(progress))," epochs"
 	fo.close()
 						
 # datadir = '/dev/shm/'
 # datadir = '/scratch/'
-datadir = '/nobackup/'
+# datadir = '/nobackup/'
+datadir = 'results/'
+
 colmap = {}
 colmap['etype'] = 0
 colmap['epoch_esize'] = 1
