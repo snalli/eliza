@@ -125,7 +125,7 @@ class epoch:
 	''' Stage 1 '''
 
 	def write(self, te):
-		
+		# Obsolete, but don't remove yet.
 		te_type = te.get_type()
 		# Data-centric vs. Ctrl-centric distinctions
 		# Data-centric : If an epoch contains even a single data write
@@ -137,18 +137,18 @@ class epoch:
 		if te_type == 'PM_D':
 			if self.personality < 3:
 				self.personality = 3 # Data (Data-centric classification)
-				# For N this is data
+				# For Nstore this is data
 		elif te_type == 'PM_W':
 			if self.personality < 2:
 				self.personality = 2 # Ctrl or Data; depends on s/w 
-				# For M this is data
-				# For P this is meta
-				# For N this is meta
+				# For Mnemosyne this is data
+				# For PMFS this is meta
+				# For Nstore this is meta
 		elif te_type == 'PM_I':
 			if self.personality < 3: # Data or Ctrl; depends on s/w (Control centric classification)
 				self.personality = 3
-				# For M this is meta
-				# For P this is data
+				# For Mnemosyne this is meta
+				# For PMFS this is data
 		else:
 			assert(0)
 			# We shouldn't be here for a non-write operation
