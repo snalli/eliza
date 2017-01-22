@@ -1,12 +1,12 @@
 /*
  * Macros to instrument PM reads and writes
- * Author : Sanketh Nalli 
+ * Author : Nalli, S. 
  * Contact: nalli@wisc.edu
  *
  * The value returned by code surrounded by {}
  * is the value returned by last statement in
  * the block. These macros do not perform any
- * operations on the persistent variable itsellu,
+ * operations on the persistent variable itself,
  * and hence do not introduce any extra accesses
  * to persistent memory. 
  * 
@@ -15,57 +15,69 @@
 #ifndef PM_INSTR_H
 #define PM_INSTR_H
 #include <stdio.h>
-#include <stdarg.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/mman.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
-#include <debug.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define LOC1 	__func__	/* str ["0"]: can be __func__, __FILE__ */	
 #define LOC2	__LINE__        /* int [0]  : can be __LINE__ */
-#define PM_CL_SIZE	64	/* Cache line size on x86-64 architecture */
-#define FIX_ALLOC	0
-
-#if FIX_ALLOC
-#define __TM_CALLABLE__		__attribute__((transaction_safe))
-#define TM_BEGIN()		__transaction_atomic {
-#define TM_END()		}
-#else
-#define __TM_CALLABLE__		
-#define TM_BEGIN()		{;}
-#define TM_END()		{;}
-#endif
-
 #define m_out stdout
 #define m_err stderr
+#define TSTR_SZ         128
+#define MAX_TBUF_SZ     2*512*1024*1024   /* bytes */
 
-/* Cacheable PM write */
-#define PM_WRT_MARKER                   "PM_W"
-#define PM_DWRT_MARKER                  "PM_DW"	/* Cache-able data write */
-#define PM_DI_MARKER                 	"PM_DI" /* Non-temporal data write */
+/* 
+  Currently, the buffer is 1gb in size since that is the 
+  maximum allowed by mmap. mmap64 fails for some reason and isn't 
+  supported on all systems. If a circular buffer is used, then after
+  a point every insertion into the buffer will be followed by a drain
+  operation which will move one entry into storage after compression.
+  This not only increases the latency of an insertion affecting runtime
+  performance, but underutilizes the capacity of gzip to compress larger
+  blocks and possibly unnecessary disk I/O. In short, please batch movement
+  of data between buffer and storage.
+ */
 
-/* Cacheable PM read */
-#define PM_RD_MARKER                    "PM_R"
+extern __thread struct timeval mtm_time;
+extern __thread int mtm_tid;
 
-/* Un-cacheable PM store */
-#define PM_NTI                          "PM_I"
+extern __thread char tstr[TSTR_SZ];
+extern __thread int tsz;
+extern __thread unsigned long long tbuf_ptr;
+extern __thread int reg_write;
+extern __thread unsigned long long n_epoch;
 
-/* PM flush */
-#define PM_FLUSH_MARKER                 "PM_L"
-#define PM_FLUSHOPT_MARKER              "PM_O"
+extern char *tbuf;
+extern unsigned long long tbuf_sz;
+extern pthread_spinlock_t tbuf_lock;
+extern pthread_spinlock_t tot_epoch_lock;
+extern int mtm_enable_trace;
+extern int mtm_debug_buffer;
+extern int trace_marker, tracing_on;
+extern struct timeval glb_time;
+extern unsigned long long start_buf_drain, end_buf_drain, buf_drain_period;
+extern unsigned long long glb_tv_sec, glb_tv_usec, glb_start_time;
+extern unsigned long long tot_epoch;
 
-/* PM Delimiters */
-#define PM_TX_START                     "PM_XS"
-#define PM_FENCE_MARKER                 "PM_N"
-#define PM_COMMIT_MARKER                "PM_C"
-#define PM_BARRIER_MARKER               "PM_B"
-#define PM_TX_END                       "PM_XE"
+extern void __pm_trace_print(char* format, ...);
+extern unsigned long long get_epoch_count(void);
+extern unsigned long long get_tot_epoch_count(void);
 
-
-#ifdef _ENABLE_TRACE
+#define PSEGMENT_RESERVED_REGION_START   0x0000100000000000
+#define PSEGMENT_RESERVED_REGION_SIZE    0x0000010000000000 /* 1 TB */
+#define PSEGMENT_RESERVED_REGION_END     (PSEGMENT_RESERVED_REGION_START +    \
+                                          PSEGMENT_RESERVED_REGION_SIZE)
+/******************************************************************************/
+#ifdef _ENABLE_TRACE 
+/* Customer user-mode, blocking tracer */
 #define time_since_start							\
 	({									\
 		gettimeofday(&mtm_time, NULL);					\
@@ -85,11 +97,11 @@
 	pthread_spin_lock(&tbuf_lock);						\
        	sprintf(tstr, format, args);    					\
 	tsz = strlen(tstr);							\
-	if(tsz < MAX_TBUF_SZ - tbuf_sz)						\
+	if((unsigned long long)tsz < MAX_TBUF_SZ - tbuf_sz)			\
 	{									\
 		memcpy(tbuf+tbuf_sz, 						\
 				tstr, tsz);					\
-		tbuf_sz += tsz;							\
+		tbuf_sz += (unsigned long long)tsz;				\
 	}									\
 	else {									\
 		tbuf_ptr = 0;							\
@@ -114,7 +126,7 @@
 			(end_buf_drain = time_since_start));			\
 		}								\
 		memcpy(tbuf, tstr, tsz);					\
-		tbuf_sz += tsz;							\
+		tbuf_sz += (unsigned long long)tsz;				\
 		buf_drain_period += (end_buf_drain -				\
 					start_buf_drain) + 1;			\
 	}									\
@@ -133,15 +145,35 @@
         }                                                                       \
     }
 #else
-#define TENTRY_ID (int)0
-#define pm_trace_print(format, args ...)					\
-{										\
-	__pm_trace_print(format, args);						\
+#define TENTRY_ID (int)0 /* this is the first arg */
+#define pm_trace_print(format, args ...)                                        \
+{                                                                               \
+        __pm_trace_print(format, args);                                         \
 }
 #endif
-
+/******************************************************************************/
 #define PM_TRACE                        pm_trace_print
 
+/* Cacheable PM write */
+#define PM_WRT_MARKER                   "PM_W"
+#define PM_DWRT_MARKER                  "PM_DW" /* Cache-able data write */
+#define PM_DI_MARKER                    "PM_DI" /* Non-temporal data write */
+
+/* Cacheable PM read */
+#define PM_RD_MARKER                    "PM_R"
+
+/* Un-cacheable PM store */
+#define PM_NTI                          "PM_I"
+
+/* PM flush */
+#define PM_FLUSH_MARKER                 "PM_L"
+
+/* PM Delimiters */
+#define PM_TX_START                     "PM_XS"
+#define PM_FENCE_MARKER                 "PM_N"
+#define PM_COMMIT_MARKER                "PM_C"
+#define PM_BARRIER_MARKER               "PM_B"
+#define PM_TX_END                       "PM_XE"
 
 /* PM Write macros */
 /* PM Write to variable */
@@ -156,6 +188,18 @@
                         LOC2);                  	\
     })
 
+#define PM_STORE_DW(pm_dst, bytes)                      \
+    ({                                                  \
+        PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",           \
+                        TENTRY_ID,                      \
+                        PM_DWRT_MARKER,                 \
+                        (pm_dst),                       \
+                        bytes,                          \
+                        LOC1,                           \
+                        LOC2);                          \
+    })
+
+
 #define PM_WRITE(pm_dst)                            	\
     ({                                              	\
         PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",        	\
@@ -169,6 +213,20 @@
         pm_dst;                                     	\
     })
 
+#define PM_WRITE_DW(pm_dst)                             \
+    ({                                                  \
+        PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",           \
+                        TENTRY_ID,                      \
+                        PM_DWRT_MARKER,                 \
+                        &(pm_dst),                      \
+                        sizeof((pm_dst)),               \
+                        LOC1,                           \
+                        LOC2);                          \
+                                                        \
+        pm_dst;                                         \
+    })
+
+
 #define PM_EQU(pm_dst, y)                           	\
     ({                                              	\
             PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",    	\
@@ -180,7 +238,6 @@
                         LOC2);                  	\
             pm_dst = y;                             	\
     })
-
 #define PM_EQU_DW(pm_dst, y)                            \
     ({                                                  \
             PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",       \
@@ -197,13 +254,14 @@
     ({                                                  \
             PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",       \
                         TENTRY_ID,                      \
-                        PM_DI_MARKER,                 	\
+                        PM_DI_MARKER,                   \
                         &(pm_dst),                      \
                         sizeof((pm_dst)),               \
                         LOC1,                           \
                         LOC2);                          \
             pm_dst = y;                                 \
     })
+
 
 
 #define PM_OR_EQU(pm_dst, y)                        	\
@@ -267,11 +325,35 @@
             memset(pm_dst, val, sz);                	\
     }) 
 
+#define PM_DMEMSET(pm_dst, val, sz)                  	\
+    ({                                              	\
+            PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",    	\
+			TENTRY_ID,		    	\
+                        PM_DWRT_MARKER,              	\
+                        (pm_dst),                   	\
+                        (unsigned long)sz,          	\
+                        LOC1,                   	\
+                        LOC2);                  	\
+            memset(pm_dst, val, sz);                	\
+    }) 
+
 #define PM_MEMCPY(pm_dst, src, sz)                  	\
     ({                                              	\
             PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",    	\
 			TENTRY_ID,		    	\
                         PM_WRT_MARKER,              	\
+                        (pm_dst),                   	\
+                        (unsigned long)sz,          	\
+                        LOC1,                   	\
+                        LOC2);                  	\
+            memcpy(pm_dst, src, sz);                	\
+    })              
+
+#define PM_DMEMCPY(pm_dst, src, sz)                  	\
+    ({                                              	\
+            PM_TRACE("%d:%llu:%s:%p:%lu:%s:%d\n",    	\
+			TENTRY_ID,		    	\
+                        PM_DWRT_MARKER,              	\
                         (pm_dst),                   	\
                         (unsigned long)sz,          	\
                         LOC1,                   	\
@@ -289,6 +371,18 @@
                         LOC1,                   	\
                         LOC2);                  	\
             strcpy(pm_dst, src);                    	\
+    })
+
+#define PM_STRNCPY(pm_dst, src, len)                   	\
+    ({                                              	\
+            PM_TRACE("%d:%llu:%s:%p:%u:%s:%d\n",     	\
+			TENTRY_ID,		    	\
+                        PM_WRT_MARKER,              	\
+                        (pm_dst),                   	\
+                        (int)len,    	    		\
+                        LOC1,                   	\
+                        LOC2);                  	\
+            strncpy(pm_dst, src, len);                 	\
     })
 
 #define PM_MOVNTI(pm_dst, count, copied)            	\
@@ -387,9 +481,9 @@
                 LOC2);                          	\
     })
 
-#define PM_START_TX     start_txn
-#define PM_END_TX       end_txn
-
+#define PM_START_TX	start_txn
+#define PM_END_TX	end_txn
+/******************************************************************************/
 /* PM Persist operations 
  * (done/copied) followed by count to maintain 
  * uniformity with other macros
@@ -406,20 +500,6 @@
                     LOC2                        	\
                 );                                  	\
     })
-
-#define PM_FLUSHOPT(pm_dst, count, done)               	\
-    ({                                              	\
-        PM_TRACE("%d:%llu:%s:%p:%u:%u:%s:%d\n",      	\
-			TENTRY_ID,		    	\
-                    PM_FLUSHOPT_MARKER,                	\
-                    (pm_dst),                       	\
-                    done,                           	\
-                    count,                          	\
-                    LOC1,                       	\
-                    LOC2                        	\
-                );                                  	\
-    })
-
 #define PM_COMMIT()                                 	\
     ({                                              	\
         PM_TRACE("%d:%llu:%s:%s:%d\n",		    	\
